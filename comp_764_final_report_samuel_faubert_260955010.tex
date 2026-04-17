@@ -6,7 +6,23 @@
 \usepackage{subcaption}
 \usepackage{float}
 \usepackage{microtype}
+
+\usepackage{listings}
+\usepackage{xcolor} % For color styling
+
+\lstset{
+  language=C,                % Set language to C
+  basicstyle=\ttfamily\small, % Monospaced font
+  keywordstyle=\color{blue},  % Color for keywords
+  commentstyle=\color{green}, % Color for comments
+  stringstyle=\color{red},    % Color for strings
+  numbers=left,               % Line numbers on the left
+  numberstyle=\tiny\color{gray},
+  frame=single,               % Box around code
+  breaklines=true             % Wrap long lines
+}
 \setlength{\emergencystretch}{3em}
+
 
 \pagestyle{fancy}
 \fancyhf{}
@@ -140,7 +156,7 @@ While static scheduling achieves high efficiency in regular applications, its re
 \subsubsection{Dynamatic and Dataflow-Based Execution}
 
 A prominent realization of dynamic scheduling in HLS is the Dynamatic framework, an open-source compiler that translates standard C/C++ into dynamically scheduled synchronous dataflow circuits \cite{10.1145/3373087.3375391} %
-. Unlike the explicit ``datapath + schedule'' abstraction found in static intermediate representations like HIR, Dynamatic constructs \textit{Elastic Circuits}. In this paradigm, hardware components communicate exclusively via local handshaking protocols (e.g., \textit{valid} and \textit{ready} signals), exchanging data tokens precisely when all conditions for a transaction are satisfied \cite{10.1145/3373087.3375391} %
+. Unlike the explicit ``datapath + schedule'' abstraction found in HIR, Dynamatic constructs \textit{Elastic Circuits}. In this paradigm, hardware components communicate exclusively via local handshaking protocols (e.g., \textit{valid} and \textit{ready} signals), exchanging data tokens precisely when all conditions for a transaction are satisfied \cite{10.1145/3373087.3375391} %
 .
 
 To faithfully execute complex, high-level control flow structures without a centralized FSM, Dynamatic employs a specialized set of dataflow routing components:
@@ -157,7 +173,182 @@ By interconnecting these handshaking primitives, Dynamatic constructs a dataflow
 
 
 \section{Overview and Motivation}
-[Provide an overview of the approach and a motivating example.]
+
+\subsection{The Fundamental Scheduling Trade-Off}
+
+Two competing imperatives govern the design of any High-Level Synthesis
+(HLS) scheduler: the desire for minimal hardware area---best served by
+aggressive compile-time resource sharing---and the desire for maximal
+throughput---best served by runtime adaptability to unpredictable control
+and memory behaviour.
+Static scheduling (SS) resolves this tension conservatively by fixing the
+allocation of every operation to a specific clock cycle during compilation,
+producing a lean Finite State Machine with Datapath (FSMD) architecture
+that requires no runtime control overhead~\cite{9378784}.
+Dynamic scheduling (DS), by contrast, defers all scheduling decisions to
+runtime: hardware components communicate exclusively through local
+\textit{valid}/\textit{ready} handshaking signals and fire as soon as
+their input tokens are available, yielding circuits capable of
+adapting their effective schedule on-the-fly~\cite{10.1145/3373087.3375391}.
+Neither paradigm is universally superior.
+This section develops a concrete motivating example that illustrates
+precisely when and why the choice of scheduling strategy matters, and then
+outlines the experimental approach taken in this work to quantify those
+trade-offs.
+
+% ----------------------------------------------------------
+\subsection{Static Scheduling via HIR}
+% ----------------------------------------------------------
+
+In statically scheduled HLS, the compiler constructs the complete
+operation-to-cycle mapping prior to synthesis.
+The Hardware Intermediate Representation (HIR)~\cite{10.1145/3623278.3624767}
+embodies this paradigm within the MLIR ecosystem by replacing the
+conventional \textit{datapath + FSM} abstraction with an explicit
+\textit{datapath + schedule} representation.
+Every execution region---a loop body, a function---is assigned a
+\textit{time variable}, and every operation within that region is
+scheduled at a statically known offset relative to its region's start
+time~\cite{10.1145/3623278.3624767}.
+The downstream compiler pass then mechanically synthesises the required
+FSM from these scheduling contracts, without requiring the frontend to
+manually construct control logic.
+
+This approach excels in \textit{regular, affine workloads} where loop
+bounds and memory access patterns are fully predictable at compile time.
+Under such conditions, the scheduler can safely pipeline loops to their
+minimum achievable Initiation Interval (II), share functional units across
+non-overlapping operations, and produce circuits with a minimal area
+footprint.
+However, when a kernel contains data-dependent control flow or
+variable-latency memory accesses, the static scheduler must adopt
+\textit{pessimistic assumptions}---reserving extra pipeline stages or
+inflating the II to accommodate the worst-case execution path---thereby
+leaving performance on the table even when the worst case is rarely
+encountered~\cite{9378784}.
+
+% ----------------------------------------------------------
+\subsection{Dynamic Scheduling via Dynamatic}
+% ----------------------------------------------------------
+
+Dynamatic~\cite{10.1145/3373087.3375391} represents the alternative
+extreme.
+Rather than encoding a global schedule into the circuit, it constructs
+\textit{Elastic Circuits}: a dataflow graph in which every arc carries
+\textit{valid} and \textit{ready} signals.
+A component fires precisely when all required input tokens are valid and
+the downstream consumer signals readiness; backpressure propagates
+upstream automatically if a consumer is not ready.
+Specialised routing primitives---\textsc{Fork}, \textsc{Join},
+\textsc{Branch}, and \textsc{Merge}---implement conditional and
+concurrent control flow without any centralised FSM.
+
+This architecture is inherently resilient to variability: a cache miss or
+a short-circuit loop exit simply stalls the affected path locally rather
+than forcing a global pipeline flush.
+In applications with irregular memory access patterns or data-dependent
+loop bounds, this elasticity translates directly into lower cycle counts.
+The cost is twofold: (i) every dataflow arc introduces handshaking logic,
+increasing the per-channel area and potentially lengthening the critical
+path, and (ii) the absence of compile-time scheduling makes resource
+sharing across operations difficult, so functional units are generally
+not reused~\cite{9378784,10.1145/3373087.3375391}.
+
+% ----------------------------------------------------------
+\subsection{Motivating Example}
+% ----------------------------------------------------------
+
+To make the trade-off concrete, consider the loop kernel in
+Listing~\ref{lst:motiv}.
+The array \texttt{b} is conditionally updated on every iteration
+depending on a runtime predicate derived from \texttt{a[i]}.
+The number of loop iterations, \texttt{N}, is fixed, but the latency of
+the conditional write---and therefore the data-dependency chain from one
+iteration to the next---varies at runtime.
+
+\begin{figure}[h]
+\begin{lstlisting}
+  #define N 128
+  void conditional_acc(int a[N], int b[N]) {
+    for (int i = 0; i < N; i++) {
+        if (a[i] > 0)
+            // data-dependent write
+            b[i] = b[i] + a[i];
+    }
+}
+\end{lstlisting}
+\caption{Motivating example: a loop with a data-dependent
+         conditional write.}
+\label{lst:motiv}
+\end{figure}
+
+\paragraph{Static schedule}
+Because the compiler cannot determine at compile time which iterations
+will execute the write, the static scheduler must conservatively assume
+that \emph{every} iteration incurs the full load-modify-store latency.
+It therefore sets the loop II to accommodate this worst-case path,
+stalling the pipeline for cycles in which \texttt{a[i] $\leq$ 0} and
+the write is skipped.
+
+\paragraph{Dynamic schedule}
+The Dynamatic elastic circuit imposes no global stall.
+Iterations for which \texttt{a[i] $\leq$ 0} bypass the write path
+immediately; backpressure only activates when a genuine read-after-write
+hazard is detected at runtime.
+Consequently, throughput adapts to the actual data distribution: sparse
+conditional writes yield near-II\,=\,1 throughput, whereas dense writes
+degrade gracefully to the memory-bound limit.
+The penalty is a larger circuit area due to the per-arc handshake
+registers and routing primitives required to implement the elastic
+dataflow graph~\cite{10.1145/3373087.3375391}.
+
+As Cheng~et~al.\ demonstrate in the context of the DASS framework, the
+relative benefit of dynamic over static scheduling is strongly
+workload-dependent, and neither paradigm dominates across all
+benchmarks~\cite{9378784}.
+
+% ----------------------------------------------------------
+\subsection{Research Questions and Experimental Approach}
+% ----------------------------------------------------------
+
+The motivating example raises three concrete research questions that
+this study addresses empirically:
+
+\begin{enumerate}
+
+  \item \textbf{Throughput under regularity vs.\ irregularity.}
+        For kernels with fully affine, predictable access patterns, does
+        HIR's static schedule achieve comparable or superior cycle counts
+        to Dynamatic's elastic circuits?
+        Conversely, for kernels with data-dependent control flow or
+        irregular memory accesses, does dynamic scheduling yield
+        measurable throughput improvements?
+
+  \item \textbf{Area overhead of elastic control.}
+        How large is the area premium---measured in Adaptive Look-Up Tables (ALUTs),
+        Registers, and GPIO pins---incurred by Dynamatic's
+        per-arc handshaking infrastructure relative to HIR's statically
+        scheduled datapath?
+
+  \item \textbf{Impact on achievable clock frequency.}
+        Does the additional combinational logic introduced by
+        \textit{valid}/\textit{ready} arbitration in Dynamatic lengthen
+        the critical path and reduce the achievable clock frequency
+        compared to HIR's FSM-based controller?
+
+\end{enumerate}
+
+To answer these questions, a shared set of benchmark kernels spanning
+both regular and irregular workloads is compiled through both the HIR
+and Dynamatic pipelines under identical synthesis constraints.
+Both pipelines target the same FPGA device, and all hardware metrics
+are extracted from post-synthesis reports, ensuring a controlled and
+equitable comparison.
+The MLIR/CIRCT ecosystem~\cite{10.1145/3689790,circt} provides a common
+compiler substrate (after my intervention), reducing tool-chain 
+divergence as a confounding variable.
+The methodology, benchmarks, and synthesis environment are described in
+detail in the following section.
 
 \section{System Design}
 [Describe the high-level design and the methodology used.]
