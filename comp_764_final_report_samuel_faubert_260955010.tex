@@ -50,6 +50,65 @@ In this project, we make the following contributions:
 \end{itemize}
 
 \section{Related Work}
+\subsection{MLIR and CIRCT: A Modern Compiler Infrastructure for HLS}
+\label{subsec:mlir-circt}
+
+The Multi-Level Intermediate Representation (MLIR) is a compiler
+infrastructure originally developed to address the fragmentation endemic
+to domain-specific and general-purpose language compilation~\cite{lattner2021mlir}.
+Rather than imposing a single level of abstraction, MLIR defines a unified
+framework in which multiple \emph{dialects}---each a namespaced collection
+of operations, types, and attributes---can coexist and interoperate within
+the same compilation unit. This design enables \emph{progressive lowering},
+where a program is incrementally transformed from high-level, semantically
+rich representations down to target-specific hardware descriptions, with
+each dialect capturing the information most relevant to the optimizations
+performed at that stage~\cite{lattner2021mlir}.
+
+Building directly on this foundation, the Circuit IR Compilers and Tools
+(CIRCT) project is an LLVM sub-project and umbrella initiative that adapts
+MLIR's methodology specifically for hardware design and high-level
+synthesis~\cite{circt}. CIRCT introduces a hierarchy of hardware-oriented
+dialects spanning different levels of abstraction: from high-level,
+control-flow-centric dialects such as \texttt{SCF} and \texttt{Affine},
+through the \texttt{Handshake} dialect that encodes latency-insensitive,
+token-based dataflow semantics, down to structural dialects such as
+\texttt{HW}, \texttt{Comb}, and \texttt{SV} that correspond closely to
+synthesizable SystemVerilog constructs~\cite{10.1145/3623278.3624767}.
+The availability of the \texttt{export-verilog} pass within CIRCT provides
+a common, reusable backend for emitting synthesizable RTL from any
+dialect that lowers into the \texttt{HW}/\texttt{SV} layer.
+
+The significance of this infrastructure for the HLS scheduling debate lies
+in its ability to cleanly separate the concerns of scheduling strategy from
+code generation. Static scheduling approaches, such as those embodied by the
+Hardware Intermediate Representation (HIR)~\cite{10.1145/3623278.3624767},
+operate as MLIR dialects in which every operation carries an explicit,
+compiler-assigned time variable. The HIR compiler, built atop MLIR and
+targeting CIRCT's structural dialects, demonstrates that an LLVM-like,
+pass-based architecture can perform schedule verification, bitwidth
+reduction, and delay coalescing as composable, reusable transformation
+passes~\cite{10.1145/3623278.3624767}. Dynamic scheduling approaches
+likewise benefit from the CIRCT ecosystem: the \texttt{Handshake} dialect
+provides first-class IR support for the valid/ready handshaking protocol
+underpinning dataflow circuits, enabling tools such as the modern
+rewrite of Dynamatic to represent, analyse, and optimise elastic circuits
+entirely within the MLIR framework~\cite{10.1145/3373087.3375391}.
+
+A particularly relevant contribution of the CIRCT ecosystem to this work
+is the unification it offers across scheduling paradigms. As demonstrated
+by Kim et al.~\cite{10.1145/3689790}, static and dynamic intermediate
+languages for accelerator generation share substantial structural
+commonality and can be unified under a single compiler framework without
+sacrificing the semantic distinctions that make each paradigm appropriate
+for different workloads. This perspective motivates the comparative
+evaluation presented in this paper: by grounding both the statically
+scheduled HIR pipeline and the dynamically scheduled Dynamatic pipeline
+in the same MLIR/CIRCT ecosystem, we are able to attribute observed
+differences in latency, area, and throughput to the scheduling strategy
+itself, rather than to disparities in backend code quality or target
+toolchain.
+
 \subsection{Static Scheduling in High-Level Synthesis}
 
 In High-Level Synthesis (HLS), scheduling is the fundamental process of allocating operations from a high-level algorithmic description to specific clock cycles \cite{9378784} %
@@ -94,6 +153,9 @@ To faithfully execute complex, high-level control flow structures without a cent
 
 By interconnecting these handshaking primitives, Dynamatic constructs a dataflow graph capable of resolving control dependencies dynamically. This elasticity inherently extracts fine-grained, instruction-level parallelism and allows the circuit to adapt its schedule on-the-fly. Consequently, dynamically scheduled circuits gracefully tolerate variable latency events—such as cache misses or unpredictable loop bounds—that would otherwise stall a statically scheduled pipeline \cite{10.1145/3373087.3375391} %
 .
+
+
+
 \section{Overview and Motivation}
 [Provide an overview of the approach and a motivating example.]
 
