@@ -406,140 +406,56 @@ Following this integration, both pipelines build and execute within a single
 CMake environment, providing the unified compiler on which I conduct all
 subsequent experiments in this study.
 
-% ----------------------------------------------------------
-% ----------------------------------------------------------
-\subsection{Pragma System Extensions in Polygeist for HIR Generation}
-\label{sec:pragma-system}
-% ----------------------------------------------------------
+\subsection{HLS Pragma Annotations for the HIR Pipeline}
 
-A central engineering contribution of this work is the extension of
-the Polygeist C-to-MLIR frontend with a custom \texttt{\#pragma HLS}
-handler, implemented in \texttt{tools/cgeist/Lib/pragmaHandler.cc}.
-The original Polygeist tool had no mechanism for expressing
-hardware-specific scheduling constraints; loop initiation intervals,
-memory port configurations, and external operator latencies had to
-be inserted manually as MLIR attributes after the fact~\cite{10.1145/3623278.3624767}.
-The pragma system eliminates this manual step by parsing source
-annotations at the C preprocessing stage and attaching them as
-first-class MLIR attributes on the corresponding operations.
-These attributes are expressed using a dedicated \texttt{hls.*}
-namespace, and are subsequently consumed by the
-\texttt{AffineToHIRPrep} lowering pass (Section~\ref{sec:affine-to-hir-prep})
-to produce well-formed HIR.
+The HIR frontend extends the Polygeist C-to-MLIR ingestion pass with a
+custom \texttt{\#pragma HLS} handler that recognises six directives,
+divided into \emph{region pragmas} (attached to loop or function bodies)
+and \emph{variable pragmas} (keyed to a named identifier via a
+\texttt{variable=} or \texttt{port=} clause).
 
-The handler recognises six pragma identifiers under the
-\texttt{\#pragma HLS} namespace, falling into two structural
-categories: \emph{region pragmas}, which annotate a loop or function
-body, and \emph{variable pragmas}, which annotate a named port,
-array, or external symbol.
+\paragraph{Region pragmas.}
+\texttt{\#pragma HLS PIPELINE II=\textit{n}} attaches the attribute
+\texttt{hls.PIPELINE\_II} to the enclosing \texttt{affine.for} operation;
+during the \texttt{AffineToHIRPrep} pass this is renamed to the HIR
+attribute \texttt{II} and consumed by the ILP-based scheduler to
+constrain the \texttt{hir.next\_iter} offset, enforcing the
+user-specified Initiation Interval directly in the IR.
+\texttt{\#pragma HLS UNROLL} causes the loop induction variable to be
+treated as an \texttt{index} (compile-time constant) type, a prerequisite
+for memory banking on any array dimension iterated by the unrolled loop.
 
-% ------ Region Pragmas -----------------------------------------------
-\subsubsection{Region Pragmas}
-
-Region pragmas are attached to the for-loop or function region
-immediately following them and are stored as \texttt{RegionPragma}
-objects keyed to the source location of the pragma token.
-
-\paragraph{\texttt{\#pragma HLS PIPELINE II = \textit{n}}}
-This pragma instructs the static scheduler to pipeline the enclosing
-loop with a target Initiation Interval of $n$ clock cycles.
-After parsing, the attribute \texttt{hls.PIPELINE\_II} is attached to
-the corresponding \texttt{affine.for} operation, where it is later
-consumed and renamed by the \texttt{AffineToHIRPrep} pass.
-Nested loops each carry their own \texttt{PIPELINE} pragma, allowing
-the compiler to construct a pipelined schedule at every level of the
-loop nest independently.
-
-\paragraph{\texttt{\#pragma HLS UNROLL}}
-This pragma marks the immediately enclosing loop for full spatial
-unrolling.
-It is stored as a \texttt{RegionPragma} and causes the loop induction
-variable to be treated as an \texttt{index} type in HIR---a
-compile-time constant integer---rather than a runtime value.
-Because HIR's banked \texttt{memref} dimensions may only be indexed by
-\texttt{index}-typed variables (ensuring the compiler can statically
-determine which memory bank is accessed), the \texttt{UNROLL} pragma
-is a prerequisite for enabling memory banking on any array dimension
-that is iterated by the unrolled loop.
-
-% ------ Variable Pragmas ---------------------------------------------
-\subsubsection{Variable Pragmas}
-
-Variable pragmas are keyed to a named identifier extracted from a
-mandatory \texttt{variable = \textit{name}} or
-\texttt{port = \textit{name}} key-value pair.
-They are stored as \texttt{VarPragma} objects and lowered to
-attributes on the corresponding MLIR value---either a function
-argument or a \texttt{memref.alloca} operation.
-
-\paragraph{\texttt{\#pragma HLS INTERFACE port = \textit{p}
-  storage\_type = \{ram\_1p $|$ ram\_2p\}
-  rd\_latency = \textit{r}
-  wr\_latency = \textit{w}}}
-This pragma specifies the memory interface contract for a
-\emph{function argument} that represents an external memory buffer.
-The \texttt{storage\_type} field distinguishes single-port
-(\texttt{ram\_1p}) from simple-dual-port (\texttt{ram\_2p}) block-RAM
-configurations.
-The \texttt{rd\_latency} and \texttt{wr\_latency} fields declare the
-number of clock cycles required for a read or write transaction,
-respectively, to complete on that port.
-The pragma is lowered to the intermediate attributes
-\texttt{hls.INTERFACE\_RD\_LATENCY} and
-\texttt{hls.INTERFACE\_WR\_LATENCY} on the corresponding function
-argument, which are later translated into HIR's
-\texttt{hir.memref.ports} array attribute by the
-\texttt{AffineToHIRPrep} pass.
-
-\paragraph{\texttt{\#pragma HLS BIND\_STORAGE variable = \textit{v}
-  impl = \{bram $|$ lutram\}
-  rd\_latency = \textit{r}
-  wr\_latency = \textit{w}}}
-Whereas \texttt{INTERFACE} annotates external memory ports,
-\texttt{BIND\_STORAGE} annotates a \emph{locally allocated} array
-(i.e.\ a \texttt{memref.alloca} operation corresponding to a C-level
-stack array).
-The \texttt{impl} field maps the logical buffer to a concrete FPGA
-memory primitive: \texttt{bram} targets block-RAM resources, while
-\texttt{lutram} targets distributed LUT-based RAM.
-The latency fields and the implementation specifier are attached as
-\texttt{hls.BIND\_STORAGE\_*} attributes on the alloca operation,
-and are subsequently consumed by the \texttt{AffineToHIRPrep} pass.
-
-\paragraph{\texttt{\#pragma HLS ARRAY\_PARTITION variable = \textit{v}
-  factor = \textit{f}}}
-This pragma requests that the named local array be partitioned into
-$f$ independent banks along the relevant dimension.
-In HIR's type system, a banked \texttt{memref} distributes elements
-across multiple hardware buffers so that $f$ parallel accesses to
-distinct banks can be issued within the same clock cycle without
-port conflicts.
-The pragma therefore enables the compiler's banking-analysis pass to
-mark the corresponding \texttt{memref} dimension with the
-\texttt{bank} keyword, a prerequisite for achieving the parallel
-memory throughput required by unrolled or aggressively pipelined loop
-nests.
-
-\paragraph{\texttt{\#pragma HLS EXTERN\_FUNC variable = \textit{f}
-  latency = \textit{l}}}
-This pragma annotates an \emph{external function declaration}---a
-C function whose implementation is provided as a vendor Verilog IP
-rather than synthesised from C source---with its combinational or
-pipeline latency in clock cycles.
-The latency value is attached as the attribute
-\texttt{hls.INTERFACE\_LATENCY} on the function result, indicating
-the number of pipeline stages between the call site and any
-consuming operation.
-
+\paragraph{Variable pragmas.}
+\texttt{\#pragma HLS INTERFACE port=\textit{p} storage\_type=\{ram\_1p
+$|$ ram\_2p\} rd\_latency=\textit{r} wr\_latency=\textit{w}} specifies
+the memory-interface contract for an external buffer argument; the
+\texttt{AffineToHIRPrep} pass translates it into a
+\texttt{hir.memref.ports} array attribute that drives the synthesis of
+address, data, and enable buses in the generated SystemVerilog.
+\texttt{\#pragma HLS BIND\_STORAGE variable=\textit{v}
+impl=\{bram$|$lutram\} rd\_latency=\textit{r} wr\_latency=\textit{w}}
+applies the same latency semantics to a locally allocated
+\texttt{memref.alloca}, additionally specifying the target FPGA memory
+primitive via the \texttt{mem\_kind} attribute consumed by the buffer
+allocation pass.
+\texttt{\#pragma HLS ARRAY\_PARTITION variable=\textit{v} factor=\textit{f}}
+requests that a local array be partitioned into $f$ independent banks,
+enabling the compiler's banking-analysis pass to mark the corresponding
+\texttt{memref} dimension with the \texttt{bank} keyword and thereby
+support $f$ parallel accesses per cycle.
+Finally, \texttt{\#pragma HLS EXTERN\_FUNC variable=\textit{f}
+latency=\textit{l}} annotates an externally provided Verilog IP (e.g.\
+a floating-point unit) with its pipeline depth; the value is lowered to
+a \texttt{hir.delay} attribute via the \texttt{result\_delays} annotation,
+allowing the ILP scheduler to insert the correct number of pipeline stages
+between the call site and any consuming operation.
 % ----------------------------------------------------------
 \subsection{The \texttt{AffineToHIRPrep} Pass}
 \label{sec:affine-to-hir-prep}
 % ----------------------------------------------------------
 
 A third contribution of this work is the \texttt{AffineToHIRPrep}
-MLIR pass, implemented in
-\texttt{lib/Conversion/AffineToHIRPrep/AffineToHIRPrep.cpp}.
-This pass runs immediately before the main \texttt{AffineToHIR}
+MLIR pass. This pass runs immediately before the main \texttt{AffineToHIR}
 dialect conversion and serves as a normalisation and annotation
 layer between the \texttt{hls.*} attribute vocabulary emitted by the
 pragma handler and the HIR-native attribute vocabulary expected by
