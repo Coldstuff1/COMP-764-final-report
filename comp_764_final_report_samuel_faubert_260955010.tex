@@ -86,8 +86,15 @@ In this project, I make the following contributions:
       structural IR issues such as zero-dimensional \texttt{memref}
       promotion---collectively enabling fully automated C-to-HIR
       compilation without manual IR editing.    
-      \item Contribution 4: [Describe fourth contribution]
-\end{itemize}
+\item \textbf{Pragma-annotated Dynamatic benchmark suite for HIR compilation:}
+      The C kernels from the Dynamatic benchmark suite were annotated with
+      \texttt{\#pragma HLS} directives---covering loop \texttt{PIPELINE},
+      \texttt{UNROLL}, \texttt{INTERFACE}, and \texttt{BIND\_STORAGE}
+      configurations---to make them compatible with the HIR compilation
+      pipeline developed in this work. These are the sole benchmarks used
+      in the evaluation; the HIR benchmark suite was excluded because its
+      kernels produce elastic circuits whose resource footprint exceeds the
+      capacity of the FPGA devices available through Intel Quartus Prime.\end{itemize}
 
 \section{Related Work}
 
@@ -404,6 +411,45 @@ post-hoc IR editing that the original HIR compiler flow
 required~\cite{10.1145/3623278.3624767}, and ensure that the
 \texttt{AffineToHIR} conversion receives a structurally valid
 and fully annotated module.
+
+\subsection{Benchmark Selection and Pragma Adaptation}
+
+To enable a controlled comparison between the two compilation
+pipelines, a common benchmark suite was required. The benchmark
+kernels used in this study are drawn exclusively from the
+Dynamatic test suite, a collection of small-to-medium C kernels
+specifically designed to exercise the scheduling capabilities of
+elastic dataflow circuits~\cite{10.1145/3373087.3375391}.
+
+Although HIR defines its own set of benchmarks---complex,
+multi-loop affine workloads including systolic matrix
+multiplication, multi-stage image-processing pipelines, and
+producer-consumer loop nests~\cite{10.1145/3623278.3624767}---these
+kernels are not compatible with the Dynamatic compilation flow.
+Their structural complexity and memory access patterns produce
+elastic circuits whose resource footprint exceeds the capacity of
+the FPGA devices available through Intel Quartus Prime, the
+target synthesis platform used in this evaluation. Attempting to
+synthesise these designs results in circuits that cannot be placed
+and routed on the available target devices, rendering a fair
+comparison impossible. Consequently, HIR's own benchmarks were
+excluded from the evaluation, and all experiments are conducted
+on the Dynamatic benchmark suite.
+
+Because the Dynamatic benchmarks are plain C programs annotated
+only for the Dynamatic frontend, they required adaptation before
+they could be ingested by the HIR compilation pipeline. This was
+accomplished by adding \texttt{\#pragma HLS} directives to each
+kernel, leveraging the pragma handler developed as part of this
+work. Specifically, \texttt{PIPELINE}
+and \texttt{UNROLL} pragmas were inserted on loop nests to specify
+the desired pipelining and unrolling factors, \texttt{INTERFACE}
+pragmas were added to function arguments to declare memory port
+types, and \texttt{BIND\_STORAGE} pragmas were applied to local
+arrays to assign explicit port configurations. These annotations
+are the sole modifications made to the original Dynamatic source
+files; the algorithmic content and array dimensions remain
+unchanged, preserving the integrity of the comparison.
 
 \section{Evaluation}
 
