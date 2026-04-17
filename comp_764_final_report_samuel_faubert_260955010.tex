@@ -75,8 +75,18 @@ In this project, I make the following contributions:
       by the \texttt{AffineToHIRPrep} lowering pass to produce well-formed
       HIR, eliminating the need for manual post-hoc attribute insertion that
       the original HIR compiler flow required~\cite{10.1145/3623278.3624767}.
-    \item Contribution 3: [Describe third contribution]
-    \item Contribution 4: [Describe fourth contribution]
+\item \textbf{AffineToHIRPrep pass:}
+      A new MLIR pass was developed to bridge the gap between the
+      \texttt{hls.*} attribute vocabulary emitted by the pragma handler
+      and the HIR-native attributes expected by the \texttt{AffineToHIR}
+      dialect conversion. The pass translates memory port descriptors,
+      pipeline initiation interval constraints, and external operator
+      latencies into their HIR equivalents, annotates memory access
+      operations with port indices and read latencies, and repairs
+      structural IR issues such as zero-dimensional \texttt{memref}
+      promotion---collectively enabling fully automated C-to-HIR
+      compilation without manual IR editing.    
+      \item Contribution 4: [Describe fourth contribution]
 \end{itemize}
 
 \section{Related Work}
@@ -397,6 +407,7 @@ CMake environment, providing the unified compiler on which I conduct all
 subsequent experiments in this study.
 
 % ----------------------------------------------------------
+% ----------------------------------------------------------
 \subsection{Pragma System Extensions in Polygeist for HIR Generation}
 \label{sec:pragma-system}
 % ----------------------------------------------------------
@@ -408,15 +419,19 @@ The original Polygeist tool had no mechanism for expressing
 hardware-specific scheduling constraints; loop initiation intervals,
 memory port configurations, and external operator latencies had to
 be inserted manually as MLIR attributes after the fact~\cite{10.1145/3623278.3624767}.
-The pragma system eliminates this manual step by parsing source annotations at the C preprocessing stage
-and attaching them as first-class MLIR attributes on the corresponding
-operations, which are then consumed by the \texttt{AffineToHIRPrep}
-lowering pass to produce well-formed HIR.
+The pragma system eliminates this manual step by parsing source
+annotations at the C preprocessing stage and attaching them as
+first-class MLIR attributes on the corresponding operations.
+These attributes are expressed using a dedicated \texttt{hls.*}
+namespace, and are subsequently consumed by the
+\texttt{AffineToHIRPrep} lowering pass (Section~\ref{sec:affine-to-hir-prep})
+to produce well-formed HIR.
 
-The handler recognises six pragma identifiers under the \texttt{\#pragma HLS}
-namespace, falling into two structural categories: \emph{region pragmas},
-which annotate a loop or function body, and \emph{variable pragmas},
-which annotate a named port, array, or external symbol.
+The handler recognises six pragma identifiers under the
+\texttt{\#pragma HLS} namespace, falling into two structural
+categories: \emph{region pragmas}, which annotate a loop or function
+body, and \emph{variable pragmas}, which annotate a named port,
+array, or external symbol.
 
 % ------ Region Pragmas -----------------------------------------------
 \subsubsection{Region Pragmas}
@@ -429,13 +444,8 @@ objects keyed to the source location of the pragma token.
 This pragma instructs the static scheduler to pipeline the enclosing
 loop with a target Initiation Interval of $n$ clock cycles.
 After parsing, the attribute \texttt{hls.PIPELINE\_II} is attached to
-the corresponding \texttt{affine.for} operation.
-During the \texttt{AffineToHIRPrep} pass it is renamed to the HIR
-attribute \texttt{II}, which is directly consumed by the
-ILP-based automatic scheduler to constrain the \texttt{hir.next\_iter}
-offset of the generated loop---effectively enforcing the
-user-specified throughput contract at the level of the intermediate
-representation rather than relying on downstream HLS tool heuristics.
+the corresponding \texttt{affine.for} operation, where it is later
+consumed and renamed by the \texttt{AffineToHIRPrep} pass.
 Nested loops each carry their own \texttt{PIPELINE} pragma, allowing
 the compiler to construct a pipelined schedule at every level of the
 loop nest independently.
@@ -456,8 +466,8 @@ that is iterated by the unrolled loop.
 \subsubsection{Variable Pragmas}
 
 Variable pragmas are keyed to a named identifier extracted from a
-mandatory \texttt{variable = \textit{name}} or \texttt{port = \textit{name}}
-key-value pair.
+mandatory \texttt{variable = \textit{name}} or
+\texttt{port = \textit{name}} key-value pair.
 They are stored as \texttt{VarPragma} objects and lowered to
 attributes on the corresponding MLIR value---either a function
 argument or a \texttt{memref.alloca} operation.
@@ -474,16 +484,12 @@ configurations.
 The \texttt{rd\_latency} and \texttt{wr\_latency} fields declare the
 number of clock cycles required for a read or write transaction,
 respectively, to complete on that port.
-The \texttt{AffineToHIRPrep} pass translates these attributes into
-HIR's \texttt{hir.memref.ports} array attribute on the function
-argument: a \texttt{ram\_1p} with only \texttt{rd\_latency} produces a
-single read-only port dictionary \texttt{\{rd\_latency = r\}},
-while a \texttt{ram\_2p} with both latencies produces two separate
-port dictionaries---one read and one write---reflecting HIR's model
-of distinct address buses per port.
-This information enables the compiler backend to synthesise the
-correct address, data, and enable buses in the generated SystemVerilog
-module.
+The pragma is lowered to the intermediate attributes
+\texttt{hls.INTERFACE\_RD\_LATENCY} and
+\texttt{hls.INTERFACE\_WR\_LATENCY} on the corresponding function
+argument, which are later translated into HIR's
+\texttt{hir.memref.ports} array attribute by the
+\texttt{AffineToHIRPrep} pass.
 
 \paragraph{\texttt{\#pragma HLS BIND\_STORAGE variable = \textit{v}
   impl = \{bram $|$ lutram\}
@@ -496,11 +502,9 @@ stack array).
 The \texttt{impl} field maps the logical buffer to a concrete FPGA
 memory primitive: \texttt{bram} targets block-RAM resources, while
 \texttt{lutram} targets distributed LUT-based RAM.
-The latency fields carry the same semantics as in \texttt{INTERFACE}
-and are likewise lowered to \texttt{hir.memref.ports} by
-\texttt{AffineToHIRPrep}, while the \texttt{impl} value is stored as
-the \texttt{mem\_kind} string attribute consumed by the backend's
-buffer allocation pass when instantiating the vendor memory IP.
+The latency fields and the implementation specifier are attached as
+\texttt{hls.BIND\_STORAGE\_*} attributes on the alloca operation,
+and are subsequently consumed by the \texttt{AffineToHIRPrep} pass.
 
 \paragraph{\texttt{\#pragma HLS ARRAY\_PARTITION variable = \textit{v}
   factor = \textit{f}}}
@@ -522,15 +526,54 @@ This pragma annotates an \emph{external function declaration}---a
 C function whose implementation is provided as a vendor Verilog IP
 rather than synthesised from C source---with its combinational or
 pipeline latency in clock cycles.
-Typical uses include floating-point arithmetic units and integer
-multiply-accumulate primitives (e.g.\ \texttt{mul\_f32},
-\texttt{add\_i32}) whose latencies depend on the target FPGA device
-and operator library.
-The latency value is lowered to a \texttt{hir.delay} attribute on the
-result of the corresponding \texttt{func.call} operation via the
-\texttt{result\_delays} annotation injected by \texttt{AffineToHIRPrep},
-allowing the ILP scheduler to insert the correct number of pipeline
-stages between the call site and any consuming operation.
+The latency value is attached as the attribute
+\texttt{hls.INTERFACE\_LATENCY} on the function result, indicating
+the number of pipeline stages between the call site and any
+consuming operation.
+
+% ----------------------------------------------------------
+\subsection{The \texttt{AffineToHIRPrep} Pass}
+\label{sec:affine-to-hir-prep}
+% ----------------------------------------------------------
+
+A third contribution of this work is the \texttt{AffineToHIRPrep}
+MLIR pass, implemented in
+\texttt{lib/Conversion/AffineToHIRPrep/AffineToHIRPrep.cpp}.
+This pass runs immediately before the main \texttt{AffineToHIR}
+dialect conversion and serves as a normalisation and annotation
+layer between the \texttt{hls.*} attribute vocabulary emitted by the
+pragma handler and the HIR-native attribute vocabulary expected by
+the downstream conversion.
+
+The pass operates in three sequential stages.
+First, it normalises all \emph{external} function declarations by
+renaming \texttt{hls.INTERFACE\_LATENCY} to \texttt{hir.delay} on
+arguments and results, synthesising default argument names where
+absent, and hoisting the declarations to the top of the module so
+that every call site can resolve its callee during conversion.
+Second, it processes each non-external function by translating the
+\texttt{hls.INTERFACE\_*} and \texttt{hls.BIND\_STORAGE\_*}
+attributes placed by the pragma handler into HIR's
+\texttt{hir.memref.ports} port-descriptor arrays and
+\texttt{mem\_kind} implementation attributes, renaming
+\texttt{hls.PIPELINE\_II} to the \texttt{II} attribute directly
+consumed by the ILP scheduler, and annotating every
+\texttt{affine.load} and \texttt{affine.store} with
+\texttt{result\_delays} and \texttt{hir.memref\_port} indices
+derived from the port descriptors.
+It additionally promotes rank-0 \texttt{memref} values---arising from
+scalar C variables that Polygeist lowers to zero-dimensional
+buffers---to \texttt{memref<1xT>} with register-style port
+annotations, as HIR has no representation for zero-dimensional
+memories.
+Finally, all intermediate \texttt{hls.*} attributes are stripped,
+leaving only well-formed HIR attributes for the subsequent
+conversion pass.
+Together, these transformations eliminate the need for manual
+post-hoc IR editing that the original HIR compiler flow
+required~\cite{10.1145/3623278.3624767}, and ensure that the
+\texttt{AffineToHIR} conversion receives a structurally valid
+and fully annotated module.
 
 \section{Evaluation}
 
