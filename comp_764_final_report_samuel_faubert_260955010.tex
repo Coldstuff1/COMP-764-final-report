@@ -423,42 +423,101 @@ between the call site and any consuming operation.
 \label{sec:affine-to-hir-prep}
 % ----------------------------------------------------------
 
-A third contribution of this work is the \texttt{AffineToHIRPrep}
-MLIR pass. This pass runs immediately before the main \texttt{AffineToHIR}
-dialect conversion and serves as a normalisation and annotation
-layer between the \texttt{hls.*} attribute vocabulary emitted by the
-pragma handler and the HIR-native attribute vocabulary expected by
-the downstream conversion.
+\begin{figure*}[htbp]
+  \centering
+  \includegraphics[width=\linewidth]{figs/affine.png}
+  \subcaption{Before \texttt{AffineToHIRPrep} (Listing~A).}
+  \label{fig:prep-before}
 
-The pass operates in three sequential stages.
-First, it normalises all \emph{external} function declarations by
-renaming \texttt{hls.INTERFACE\_LATENCY} to \texttt{hir.delay} on
-arguments and results, synthesising default argument names where
-absent, and hoisting the declarations to the top of the module so
-that every call site can resolve its callee during conversion.
-Second, it processes each non-external function by translating the
-\texttt{hls.INTERFACE\_*} and \texttt{hls.BIND\_STORAGE\_*}
-attributes placed by the pragma handler into HIR's
-\texttt{hir.memref.ports} port-descriptor arrays and
-\texttt{mem\_kind} implementation attributes, renaming
-\texttt{hls.PIPELINE\_II} to the \texttt{II} attribute directly
-consumed by the ILP scheduler, and annotating every
-\texttt{affine.load} and \texttt{affine.store} with
-\texttt{result\_delays} and \texttt{hir.memref\_port} indices
-derived from the port descriptors.
-It additionally promotes rank-0 \texttt{memref} values---arising from
-scalar C variables that Polygeist lowers to zero-dimensional
-buffers---to \texttt{memref<1xT>} with register-style port
-annotations, as HIR has no representation for zero-dimensional
-memories.
-Finally, all intermediate \texttt{hls.*} attributes are stripped,
-leaving only well-formed HIR attributes for the subsequent
-conversion pass.
-Together, these transformations eliminate the need for manual
-post-hoc IR editing that the original HIR compiler flow
-requires~\cite{10.1145/3623278.3624767}, and ensure that the
-\texttt{AffineToHIR} conversion receives a structurally valid
-and fully annotated module.
+  \vspace{1em}
+
+  \includegraphics[width=\linewidth]{figs/prepped.png}
+  \subcaption{After \texttt{AffineToHIRPrep} (Listing~B).}
+  \label{fig:prep-after}
+
+  \caption{\texttt{gesummv} kernel IR before and after the
+           \texttt{AffineToHIRPrep} pass. Each transformation step
+           described in the text can be located by comparing
+           the corresponding lines across the two listings.}
+  \label{fig:prep-before-after}
+\end{figure*}
+
+The \texttt{AffineToHIRPrep} pass runs immediately before the main
+\texttt{AffineToHIR} dialect conversion and serves as a normalisation
+and annotation bridge between the \texttt{hls.*} attribute vocabulary
+emitted by the pragma handler (Section~\ref{sec:pragma-handler}) and the
+HIR-native attribute vocabulary expected by the downstream conversion.
+Without this pass, the \texttt{AffineToHIR} conversion would encounter
+unknown attributes and fail to produce valid HIR.
+
+To make the transformation concrete, Figure~\ref{fig:prep-before-after}
+shows a side-by-side view of the \texttt{gesummv} kernel IR immediately
+\emph{before} (Listing~A, left) and \emph{after} (Listing~B, right) the
+pass is applied. The pass operates in four sequential steps, each of
+which can be traced between the two listings.
+
+\paragraph{Step~1 --- External function normalisation.}
+Every externally defined function declaration (e.g.\ \texttt{@mul\_i32}
+and \texttt{@add\_i32}, lines~1--2 of Listing~A) carries
+\texttt{hls.INTERFACE\_LATENCY} attributes on its arguments and result.
+The pass renames each of these to \texttt{hir.delay}
+(lines~1--2 of Listing~B), which is the attribute the HIR scheduler uses
+to model the pipeline depth of external IP blocks.
+In addition, a \texttt{resultNames} attribute (\texttt{["out"]}) is
+synthesised where absent, satisfying an assertion in the
+\texttt{AffineToHIR} conversion that every external callee must expose
+named results. All normalised declarations are then hoisted to the top of
+the module so that call sites encountered later in the IR walk can always
+resolve their callee.
+
+\paragraph{Step~2 --- Memory argument and local buffer translation.}
+Function arguments of \texttt{memref} type (e.g.\ \texttt{\%arg2} and
+\texttt{\%arg3}, lines~5--6 of Listing~A) carry the flat
+\texttt{hls.INTERFACE\_PORT}, \texttt{hls.INTERFACE\_STORAGE\_TYPE}, and
+\texttt{hls.INTERFACE\_LATENCY} attributes attached by the pragma handler.
+The pass replaces these with a \texttt{hir.memref.ports} array whose
+dictionaries distinguish read and write ports by key
+(\texttt{rd\_latency}/\texttt{wr\_latency}), as required by the HIR
+memory-port model (lines~5--6 of Listing~B).
+The same transformation applies to local \texttt{memref.alloca}
+operations (line~8 of Listing~A): the \texttt{hls.BIND\_STORAGE\_*}
+latency values are repackaged into a \texttt{hir.memref.ports} array and
+the implementation hint (\texttt{hls.BIND\_STORAGE\_IMPL = "reg"}) is
+mapped to the \texttt{mem\_kind} attribute consumed by the buffer
+allocation pass (line~8 of Listing~B).
+Scalar arguments likewise have their \texttt{hls.INTERFACE\_LATENCY}
+renamed to \texttt{hir.delay}.
+
+\paragraph{Step~3 --- Memory access and call-site annotation.}
+Every \texttt{affine.load}, \texttt{affine.store}, and
+\texttt{func.call} must carry two annotations before
+\texttt{AffineToHIR} can lower them: a \texttt{hir.memref\_port} index
+identifying which port of the operand's \texttt{hir.memref.ports} array
+to use, and a \texttt{result\_delays} array specifying the access latency
+seen by consuming operations. The pass derives both values from the port
+descriptors established in Step~2. For instance, the \texttt{affine.load}
+operations in the inner loop body (lines~14--15 of Listing~A) carry only
+a raw \texttt{hls.INTERFACE\_LATENCY} hint from the pragma handler; after
+the pass (lines~14--15 of Listing~B) they carry
+\texttt{hir.memref\_port = 0} (selecting the first read port) and
+\texttt{result\_delays = [1]} (one-cycle read latency). The
+\texttt{func.call} sites (e.g.\ lines~16--17 of Listing~B) receive a
+\texttt{result\_delays} value derived from the \texttt{hir.delay}
+attribute of the callee's result established in Step~1.
+
+\paragraph{Step~4 --- Pipeline II renaming.}
+The \texttt{hls.PIPELINE\_II} attribute placed by the pragma handler on
+\texttt{affine.for} loops (visible at the closing braces of the loop
+nests in Listing~A, e.g.\ \texttt{\{hls.PIPELINE\_II = 1 : i64\}} and
+\texttt{\{hls.PIPELINE\_II = 18 : i64\}}) is renamed to the \texttt{II}
+token (Listing~B, same locations) directly consumed by the ILP scheduler
+to constrain the \texttt{hir.next\_iter} offset and enforce the
+user-specified Initiation Interval.
+
+After all four steps complete, every \texttt{hls.*} attribute has been
+consumed and replaced by its HIR-native equivalent. The IR emitted by
+the pass is structurally ready for the \texttt{AffineToHIR} dialect
+conversion to proceed without further modification or manual IR editing.
 
 \section{Evaluation}
 
