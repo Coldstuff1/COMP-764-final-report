@@ -334,14 +334,70 @@ custom \texttt{\#pragma HLS} handler that recognises six directives,
 divided into \emph{region pragmas} (attached to loop or function bodies)
 and \emph{variable pragmas} (keyed to a named identifier via a
 \texttt{variable=} or \texttt{port=} clause).
+To make the role of each directive concrete, consider the annotated
+kernel shown in Listing~\ref{lst:pragma-example}, which is drawn from
+the \texttt{funcIx} benchmark used in the evaluation.
 
-\paragraph{Region pragmas.}
-\texttt{\#pragma HLS PIPELINE II=\textit{n}} attaches the attribute
-\texttt{hls.PIPELINE\_II} to the enclosing \texttt{affine.for} operation;
-during the \texttt{AffineToHIRPrep} pass this is renamed to the HIR
-attribute \texttt{II} and consumed by the ILP-based scheduler to
-constrain the \texttt{hir.next\_iter} offset, enforcing the
-user-specified Initiation Interval directly in the IR.
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=\columnwidth]{figs/pragmas.png}
+  \caption{Pragma-annotated C source for the \texttt{funcIx} kernel.
+           Each \texttt{\#pragma HLS} directive targets either a loop
+           region or a named variable and is consumed by the
+           \texttt{AffineToHIRPrep} pass to produce well-formed HIR.}
+  \label{lst:pragma-example}
+\end{figure}
+
+\noindent
+Walking through the listing from top to bottom illustrates how the
+pragma categories interact:
+
+\paragraph{Memory binding pragma (line~27).}
+The outermost annotation,
+\begin{quote}
+\texttt{\#pragma HLS bind\_storage variable = w impl = bram type = ram\_2p
+rd\_latency = 1 wr\_latency = 1}
+\end{quote}
+targets the local weight array \texttt{w}.  The \texttt{impl=bram} clause
+instructs the buffer allocation pass to map this array onto a block-RAM
+primitive rather than a distributed LUT-RAM, while \texttt{type=ram\_2p}
+selects a true-dual-port interface.  The latency attributes
+\texttt{rd\_latency=1} and \texttt{wr\_latency=1} are forwarded to the
+ILP scheduler as \texttt{result\_delays} annotations on every
+\texttt{affine.load} and \texttt{affine.store} that references \texttt{w},
+so that the schedule correctly accounts for the one-cycle read and write
+latency of the BRAM primitive.
+
+\paragraph{Region (pipeline) pragmas (lines~31, 33, 36, 38).}
+Each of the four nested \texttt{affine.for} loops carries a
+\texttt{PIPELINE II=\textit{n}} directive:
+\begin{itemize}
+  \item \texttt{II=1300} on the outermost row loop (line~31) sets a loose
+        initiation interval, effectively imposing no pipelining pressure at
+        that level and allowing the inner loops to dominate scheduling.
+  \item \texttt{II=40} on the column loop (line~33) constrains how
+        frequently a new column iteration may be initiated.
+  \item \texttt{II=18} and \texttt{II=6} on the reduction loops over
+        \texttt{u} and \texttt{v} (lines~36 and~38, respectively) tighten
+        the pipeline aggressively on the innermost accumulation, where
+        throughput is most critical.
+\end{itemize}
+Each directive attaches the attribute \texttt{hls.PIPELINE\_II} to the
+corresponding \texttt{affine.for} operation; during the
+\texttt{AffineToHIRPrep} pass this attribute is renamed to \texttt{II}
+and consumed by the ILP-based scheduler to constrain the
+\texttt{hir.next\_iter} offset, enforcing the user-specified Initiation
+Interval directly in the IR.
+
+\paragraph{Scop delimiters (lines~25 and~45).}
+The \texttt{\#pragma scop} and \texttt{\#pragma endscop} markers bracket
+the affine region of interest.  These are standard Polygeist directives,
+not HLS-specific, and signal to the frontend which loop nest should be
+lowered into the \texttt{Affine} dialect rather than remaining as
+unstructured \texttt{scf.for} operations.  They are included here because
+they are a prerequisite for the pragma handler: the HLS directives are
+only meaningful inside an affine region where loop bounds are
+statically analysable.
 
 \paragraph{Variable pragmas.}
 \texttt{\#pragma HLS INTERFACE port=\textit{p} storage\_type=\{ram\_1p
