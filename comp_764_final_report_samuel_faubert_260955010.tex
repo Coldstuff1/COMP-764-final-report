@@ -551,7 +551,37 @@ unchanged, preserving the integrity of the comparison.
 \end{itemize}
 
 \subsection{Results and Analysis}
-[Show evidence that your technique works using tables and figures. Compare with other approaches if applicable.]
+\begin{figure*}[htbp]
+    \centering
+    \begin{subfigure}[b]{0.48\linewidth}
+        \includegraphics[width=\linewidth]{figs/alut-graph.png}
+        \caption{Number of ALUTs.}
+        \label{fig:aluts}
+    \end{subfigure}
+    \hfill
+    \begin{subfigure}[b]{0.48\linewidth}
+        \includegraphics[width=\linewidth]{figs/registers-graph.png}
+        \caption{Number of Registers.}
+        \label{fig:registers}
+    \end{subfigure}
+
+    \vspace{1em}
+
+    \begin{subfigure}[b]{0.48\linewidth}
+        \includegraphics[width=\linewidth]{figs/pins-graph.png}
+        \caption{Number of IO Pins.}
+        \label{fig:pins}
+    \end{subfigure}
+    \hfill
+    \begin{subfigure}[b]{0.48\linewidth}
+        \includegraphics[width=\linewidth]{figs/fmax-graph.png}
+        \caption{Maximum Frequency (\(F_{\max}\)).}
+        \label{fig:fmax}
+    \end{subfigure}
+
+    \caption{Comparative hardware metrics between HIR (static) and Dynamatic (dynamic) compilation techniques across seven benchmark kernels synthesized for the Arria 10AX115N4F45I3SG FPGA.}
+    \label{fig:all-results}
+\end{figure*}
 
 \section{Discussion}
 
