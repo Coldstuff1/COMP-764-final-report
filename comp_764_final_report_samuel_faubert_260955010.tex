@@ -66,7 +66,7 @@ In this project, I make the following contributions:
           incomplete HIR-based static scheduling pipeline, enabling both
           tools to build and execute within a single, coherent    
 \item \textbf{Pragma system extensions to Polygeist for HIR generation:}
-      The Polygeist C-to-MLIR frontend was extended with a custom
+      The Polygeist C-to-MLIR frontend is extended with a custom
       \texttt{\#pragma HLS} handler that parses source annotations---\texttt{PIPELINE}, 
       \texttt{UNROLL}, \texttt{INTERFACE}, \texttt{BIND\_STORAGE}, \texttt{ARRAY\_PARTITION},
       and \texttt{EXTERN\_FUNC}---and attaches them as first-class MLIR
@@ -74,9 +74,9 @@ In this project, I make the following contributions:
       and external-call operations. These attributes are subsequently consumed
       by the \texttt{AffineToHIRPrep} lowering pass to produce well-formed
       HIR, eliminating the need for manual post-hoc attribute insertion that
-      the original HIR compiler flow required~\cite{10.1145/3623278.3624767}.
+      the original HIR compiler flow requires~\cite{10.1145/3623278.3624767}.
 \item \textbf{AffineToHIRPrep pass:}
-      A new MLIR pass was developed to bridge the gap between the
+      A new MLIR pass is developed to bridge the gap between the
       \texttt{hls.*} attribute vocabulary emitted by the pragma handler
       and the HIR-native attributes expected by the \texttt{AffineToHIR}
       dialect conversion. The pass translates memory port descriptors,
@@ -87,12 +87,12 @@ In this project, I make the following contributions:
       promotion---collectively enabling fully automated C-to-HIR
       compilation without manual IR editing.    
 \item \textbf{Pragma-annotated Dynamatic benchmark suite for HIR compilation:}
-      The C kernels from the Dynamatic benchmark suite were annotated with
+      The C kernels from the Dynamatic benchmark suite are annotated with
       \texttt{\#pragma HLS} directives---covering loop \texttt{PIPELINE},
       \texttt{UNROLL}, \texttt{INTERFACE}, and \texttt{BIND\_STORAGE}
       configurations---to make them compatible with the HIR compilation
       pipeline developed in this work. These are the sole benchmarks used
-      in the evaluation; the HIR benchmark suite was excluded because its
+      in the evaluation; the HIR benchmark suite is excluded because its
       kernels produce elastic circuits whose resource footprint exceeds the
       capacity of the FPGA devices available through Intel Quartus Prime.\end{itemize}
 
@@ -310,14 +310,14 @@ incomplete HIR-based static scheduling pipeline~\cite{10.1145/3623278.3624767}â€
 built on incompatible snapshots of the MLIR/CIRCT
 ecosystem~\cite{circt,lattner2021mlir}.
 
-Each project maintained its own fork of both the CIRCT compiler
+Each project maintains its own fork of both the CIRCT compiler
 infrastructure and the Polygeist C-to-MLIR frontend, with bespoke dialect
 extensions, pass modifications, and pinned dependency versions that could
-not simultaneously coexist. Resolving these incompatibilities required a
+not simultaneously coexist. Resolving these incompatibilities requires a
 systematic four-way codebase integration: the Dynamatic forks of CIRCT and
-Polygeist were adopted as the authoritative baselines, and all HIR-specific
-dialect definitions, scheduling passes, and lowering infrastructure were
-ported forward onto those baselines. This involved updating CMake
+Polygeist are adopted as the authoritative baselines, and all HIR-specific
+dialect definitions, scheduling passes, and lowering infrastructure are
+ported forward onto those baselines. This involves updating CMake
 configurations and LLVM API call sites to match Dynamatic's pinned versions,
 ensuring non-conflicting dialect registration between the \texttt{HIR} and
 \texttt{Handshake} dialects, and reconciling differences in the affine IR
@@ -408,14 +408,16 @@ leaving only well-formed HIR attributes for the subsequent
 conversion pass.
 Together, these transformations eliminate the need for manual
 post-hoc IR editing that the original HIR compiler flow
-required~\cite{10.1145/3623278.3624767}, and ensure that the
+requires~\cite{10.1145/3623278.3624767}, and ensure that the
 \texttt{AffineToHIR} conversion receives a structurally valid
 and fully annotated module.
+
+\section{Evaluation}
 
 \subsection{Benchmark Selection and Pragma Adaptation}
 
 To enable a controlled comparison between the two compilation
-pipelines, a common benchmark suite was required. The benchmark
+pipelines, a common benchmark suite is required. The benchmark
 kernels used in this study are drawn exclusively from the
 Dynamatic test suite, a collection of small-to-medium C kernels
 specifically designed to exercise the scheduling capabilities of
@@ -432,32 +434,30 @@ the FPGA devices available through Intel Quartus Prime, the
 target synthesis platform used in this evaluation. Attempting to
 synthesise these designs results in circuits that cannot be placed
 and routed on the available target devices, rendering a fair
-comparison impossible. Consequently, HIR's own benchmarks were
+comparison impossible. Consequently, HIR's own benchmarks are
 excluded from the evaluation, and all experiments are conducted
 on the Dynamatic benchmark suite.
 
 Because the Dynamatic benchmarks are plain C programs annotated
-only for the Dynamatic frontend, they required adaptation before
-they could be ingested by the HIR compilation pipeline. This was
+only for the Dynamatic frontend, they require adaptation before
+they can be ingested by the HIR compilation pipeline. This is
 accomplished by adding \texttt{\#pragma HLS} directives to each
 kernel, leveraging the pragma handler developed as part of this
 work. Specifically, \texttt{PIPELINE}
-and \texttt{UNROLL} pragmas were inserted on loop nests to specify
+and \texttt{UNROLL} pragmas are inserted on loop nests to specify
 the desired pipelining and unrolling factors, \texttt{INTERFACE}
-pragmas were added to function arguments to declare memory port
-types, and \texttt{BIND\_STORAGE} pragmas were applied to local
+pragmas are added to function arguments to declare memory port
+types, and \texttt{BIND\_STORAGE} pragmas are applied to local
 arrays to assign explicit port configurations. These annotations
 are the sole modifications made to the original Dynamatic source
 files; the algorithmic content and array dimensions remain
 unchanged, preserving the integrity of the comparison.
 
-\section{Evaluation}
-
 \subsection{Experimental Setup}
 \begin{itemize}
-    \item \textbf{Environment:} Synthesized with Quartus Prime targeting Arria 10AX115N4F45I3SG
+    \item \textbf{Environment:} Synthesize with Quartus Prime targeting Arria 10AX115N4F45I3SG
     \item \textbf{Simulator:} ModelSim, 500 MHz clock
-    \item \textbf{Methodology:} Created testbenches to verify correctness, verified algorithms in software
+    \item \textbf{Methodology:} Create testbenches to verify correctness, verify algorithms in software
     \item \textbf{Benchmarks:} fir, simple exmample, sumi3, stencil 2d, gaussian, matrix, matvec, polyn mult, vector rescale
 \end{itemize}
 
