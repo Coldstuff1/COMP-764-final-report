@@ -96,127 +96,65 @@ In this project, I make the following contributions:
       kernels produce elastic circuits whose resource footprint exceeds the
       capacity of the FPGA devices available through Intel Quartus Prime.\end{itemize}
 
+% ===========================================================
 \section{Related Work}
+% ===========================================================
 
-\subsection{MLIR and CIRCT: A Modern Compiler Infrastructure for HLS}
+\textbf{Static scheduling via HIR.}
+HIR~\cite{10.1145/3623278.3624767} is an MLIR-based intermediate
+representation for hardware accelerator design that formalises static
+scheduling by embedding explicit time variables directly into the IR,
+enabling synchronisation-free loop pipelining and overlapped task
+execution without a hand-written FSM.
+While highly area-efficient for affine, regular workloads, HIR assumes
+fixed-latency operations and predictable control flow, making it
+ill-suited to kernels with data-dependent branches or variable-latency
+memory accesses.
+The present work uses HIR as one of the two evaluation pipelines,
+extending its compilation flow with a pragma-based frontend to target
+the Dynamatic benchmark suite.
 
-The Multi-Level Intermediate Representation (MLIR) is a compiler
-infrastructure developed to address fragmentation in domain-specific
-and general-purpose language compilation~\cite{lattner2021mlir}.
-Rather than imposing a single level of abstraction, MLIR defines a
-unified framework in which multiple \emph{dialects}---each a namespaced
-collection of operations, types, and attributes---can coexist and
-interoperate within the same compilation unit, enabling
-\emph{progressive lowering} from high-level, semantically rich
-representations down to target-specific hardware
-descriptions~\cite{lattner2021mlir}.
-Building on this foundation, the Circuit IR Compilers and Tools (CIRCT)
-project adapts MLIR's methodology for hardware design and HLS,
-introducing a hierarchy of dialects spanning from control-flow-centric
-abstractions (\texttt{SCF}, \texttt{Affine}, \texttt{Handshake}) down
-to structural, synthesizable constructs (\texttt{HW}, \texttt{Comb},
-\texttt{SV})~\cite{circt}.
+\textbf{Dynamic scheduling via Dynamatic.}
+Dynamatic~\cite{10.1145/3373087.3375391} is an open-source HLS compiler
+that translates C/C++ into dynamically scheduled elastic circuits, where
+components communicate exclusively through valid/ready handshaking and
+require no centralised controller.
+This design tolerates variable-latency events and irregular control flow
+that would stall a static pipeline, but incurs per-arc handshaking
+overhead that increases area, reduces resource sharing, and can lengthen
+the critical path.
+This work uses Dynamatic as the second evaluation pipeline, and
+quantifying these area and frequency costs relative to a statically
+scheduled baseline is a primary empirical objective.
 
-This infrastructure is significant to the HLS scheduling debate because
-it cleanly separates scheduling strategy from code generation.
-Static scheduling approaches such as HIR~\cite{10.1145/3623278.3624767}
-operate as MLIR dialects where every operation carries an explicit,
-compiler-assigned time variable, exposing schedule verification,
-bitwidth reduction, and delay coalescing as composable pass-based
-transformations.
-Dynamic scheduling likewise benefits: the \texttt{Handshake} dialect
-provides first-class IR support for valid/ready handshaking, enabling
-Dynamatic to represent and optimise elastic circuits entirely within the
-MLIR framework~\cite{10.1145/3373087.3375391}.
-As demonstrated by Kim et al.~\cite{10.1145/3689790}, static and dynamic
-intermediate languages share substantial structural commonality and can
-be unified under a single compiler framework, motivating the comparative
-evaluation in this paper: by grounding both pipelines in the same
-MLIR/CIRCT ecosystem, observed differences in latency, area, and
-throughput can be attributed to the scheduling strategy rather than
-to backend divergence.
+\textbf{Combining both paradigms: DASS.}
+DASS~\cite{9378784} has pioneered the combination of static and dynamic
+scheduling within a single HLS circuit, identifying regions amenable
+to static scheduling via user-supplied pragmas and wrapping them as
+black-box components inside an otherwise dynamically scheduled dataflow
+graph.
+Evaluated across realistic benchmarks, DASS recovers approximately 74\%
+of the area savings of a fully static design while achieving 135\% of
+the performance of a fully dynamic one---demonstrating that neither
+paradigm dominates universally.
+However, DASS operates across two separate tool flows (Vivado HLS for
+static regions, Dynamatic for dynamic regions) without a shared IR
+substrate, making it difficult to attribute observed differences solely
+to the scheduling strategy.
+The present work is motivated by DASS's insight but instead grounds both
+schedulers within the unified MLIR/CIRCT ecosystem, enabling a
+controlled, toolchain-neutral comparison.
 
-\subsection{Static Scheduling in High-Level Synthesis}
-
-In High-Level Synthesis (HLS), scheduling is the fundamental process of
-allocating operations from a high-level algorithmic description to
-specific clock cycles~\cite{9378784}.
-Traditional HLS tools predominantly rely on static scheduling, where
-the mapping of each operation to a clock cycle is determined entirely
-at compile time~\cite{9378784}.
-This paradigm targets a Finite State Machine with Datapath (FSMD)
-architecture, where the synthesised FSM orchestrates multiplexers and
-registers cycle-by-cycle according to the predetermined schedule.
-Static scheduling excels in applications with regular control flow and
-predictable memory access patterns, enabling aggressive optimisations
-such as resource sharing and loop pipelining with a deterministic
-Initiation Interval~(II).
-However, it requires pessimistic assumptions under unpredictable memory
-dependencies or irregular control flow, which has motivated the
-emergence of dynamic scheduling~\cite{10.1145/3373087.3375391}.
-
-\subsubsection{Static Scheduling via the HIR Intermediate Representation}
-
-A prominent example of formalising static scheduling within the IR is
-the Hardware Intermediate Representation (HIR), an MLIR-based mid-level
-IR tailored for hardware accelerator design of affine
-workloads~\cite{10.1145/3623278.3624767}.
-HIR departs from the conventional \emph{datapath\,+\,FSM} model by
-adopting an explicit \emph{datapath\,+\,schedule} representation.
-Every execution region---a loop body or function definition---is
-assigned a \emph{time variable}, and all operations within that scope
-are scheduled at a constant offset relative to the region's dynamic
-start time~\cite{10.1145/3623278.3624767}.
-This mechanism maps different dynamic execution instances of the same
-static operation to distinct clock cycles without requiring the frontend
-to manually construct FSMs.
-
-By treating the schedule as a first-class language construct, HIR
-supports synchronisation-free, fine-grained parallelism spanning
-instruction-level parallelism, loop pipelining, and overlapped task
-execution~\cite{10.1145/3623278.3624767}.
-Embedding scheduling contracts into function signatures further allows
-the compiler to statically verify data dependencies and automatically
-synthesise the required FSMs during lowering to SystemVerilog.
-
-\subsection{Dynamic Scheduling and Elastic Circuits}
-
-While static scheduling achieves high efficiency in regular
-applications, its reliance on compile-time assumptions limits its
-applicability to programs with unpredictable latencies, such as
-irregular memory accesses or data-dependent control
-flow~\cite{9378784}.
-Dynamic scheduling abandons the centralised, cycle-by-cycle global
-controller in favour of a distributed execution model where operations
-are triggered strictly by data availability at
-runtime~\cite{10.1145/3373087.3375391}.
-
-\subsubsection{Dynamatic and Dataflow-Based Execution}
-
-A prominent realisation of dynamic scheduling in HLS is the Dynamatic
-framework, an open-source compiler that translates C/C++ into
-dynamically scheduled synchronous dataflow
-circuits~\cite{10.1145/3373087.3375391}.
-Rather than an explicit schedule, Dynamatic constructs \textit{Elastic
-Circuits}: hardware components communicate exclusively via local
-\textit{valid}/\textit{ready} handshaking, exchanging data tokens
-precisely when all conditions for a transaction are
-satisfied~\cite{10.1145/3373087.3375391}.
-Control flow is realised without a centralised FSM through four
-specialised routing primitives: \textsc{Fork} (token fan-out),
-\textsc{Join} (operand synchronisation), \textsc{Branch} (conditional
-steering), and \textsc{Merge} (non-deterministic arbitration).
-
-By interconnecting these primitives, Dynamatic constructs a dataflow
-graph that resolves control dependencies dynamically, extracting
-fine-grained instruction-level parallelism and tolerating variable
-latency events---such as cache misses or unpredictable loop
-bounds---that would stall a statically scheduled
-pipeline~\cite{10.1145/3373087.3375391}.
-The cost is twofold: every dataflow arc introduces handshaking logic
-that increases area and may lengthen the critical path, and the absence
-of compile-time scheduling precludes functional unit
-sharing~\cite{9378784,10.1145/3373087.3375391}.
+\textbf{Unified compiler infrastructure.}
+MLIR~\cite{lattner2021mlir} and the CIRCT project~\cite{circt} provide a
+shared compiler infrastructure for hardware design in which static and
+dynamic scheduling dialects coexist.
+Kim et al.~\cite{10.1145/3689790} have shown that static and dynamic
+accelerator IRs share substantial structural commonality and can be
+unified under a single framework, motivating the comparative evaluation
+in this paper: by grounding both pipelines in the same MLIR/CIRCT
+substrate, observed differences in latency, area, and throughput can be
+attributed to the scheduling paradigm rather than to backend divergence.
 
 
 
