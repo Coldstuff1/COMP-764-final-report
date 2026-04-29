@@ -342,9 +342,6 @@ during the \texttt{AffineToHIRPrep} pass this is renamed to the HIR
 attribute \texttt{II} and consumed by the ILP-based scheduler to
 constrain the \texttt{hir.next\_iter} offset, enforcing the
 user-specified Initiation Interval directly in the IR.
-\texttt{\#pragma HLS UNROLL} causes the loop induction variable to be
-treated as an \texttt{index} (compile-time constant) type, a prerequisite
-for memory banking on any array dimension iterated by the unrolled loop.
 
 \paragraph{Variable pragmas.}
 \texttt{\#pragma HLS INTERFACE port=\textit{p} storage\_type=\{ram\_1p
@@ -359,11 +356,6 @@ applies the same latency semantics to a locally allocated
 \texttt{memref.alloca}, additionally specifying the target FPGA memory
 primitive via the \texttt{mem\_kind} attribute consumed by the buffer
 allocation pass.
-\texttt{\#pragma HLS ARRAY\_PARTITION variable=\textit{v} factor=\textit{f}}
-requests that a local array be partitioned into $f$ independent banks,
-enabling the compiler's banking-analysis pass to mark the corresponding
-\texttt{memref} dimension with the \texttt{bank} keyword and thereby
-support $f$ parallel accesses per cycle.
 Finally, \texttt{\#pragma HLS EXTERN\_FUNC variable=\textit{f}
 latency=\textit{l}} annotates an externally provided Verilog IP (e.g.\
 a floating-point unit) with its pipeline depth; the value is lowered to
