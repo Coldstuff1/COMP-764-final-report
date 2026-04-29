@@ -68,13 +68,13 @@ In this project, I make the following contributions:
 \item \textbf{Pragma system extensions to Polygeist for HIR generation:}
       The Polygeist C-to-MLIR frontend is extended with a custom
       \texttt{\#pragma HLS} handler that parses source annotations---\texttt{PIPELINE}, 
-      \texttt{UNROLL}, \texttt{INTERFACE}, \texttt{BIND\_STORAGE}, \texttt{ARRAY\_PARTITION},
-      and \texttt{EXTERN\_FUNC}---and attaches them as first-class MLIR
-      attributes on the corresponding loop, function-argument, local-buffer,
-      and external-call operations. These attributes are subsequently consumed
-      by the \texttt{AffineToHIRPrep} lowering pass to produce well-formed
-      HIR, eliminating the need for manual post-hoc attribute insertion that
-      the original HIR compiler flow requires~\cite{10.1145/3623278.3624767}.
+      \texttt{INTERFACE}, \texttt{BIND\_STORAGE} and \texttt{EXTERN\_FUNC}---and
+      attaches them as first-class MLIR attributes on the corresponding
+      loop, function-argument, local-buffer,and external-call operations.
+      These attributes are subsequently consumed by the \texttt{AffineToHIRPrep}
+      lowering pass to produce well-formed HIR, eliminating the need for manual
+      post-hoc attribute insertion that the original HIR compiler flow requires~
+      \cite{10.1145/3623278.3624767}.
 \item \textbf{AffineToHIRPrep pass:}
       A new MLIR pass is developed to bridge the gap between the
       \texttt{hls.*} attribute vocabulary emitted by the pragma handler
