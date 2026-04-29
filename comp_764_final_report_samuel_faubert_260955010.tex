@@ -40,62 +40,106 @@
 \maketitle
 \thispagestyle{fancy}
 
+% ===========================================================
 \section{Introduction}
+% ===========================================================
 
-\subsection{Problem Statement}
+High-Level Synthesis (HLS) has become an essential methodology in modern
+digital hardware design, enabling the automatic translation of high-level
+algorithmic specifications written in C/C++ into synthesizable hardware
+accelerators. A foundational and consequential phase of any HLS pipeline
+is \emph{scheduling}---the process of mapping algorithmic operations to
+specific clock cycles---and the choice of scheduling paradigm has
+far-reaching consequences for latency, throughput, silicon area, and
+power consumption.
 
-High-Level Synthesis (HLS) has become an essential methodology in modern digital hardware design, abstracting away the intricacies of Register Transfer Level (RTL) development by enabling the automatic translation of high-level algorithmic specifications (e.g., C/C++) into synthesizable circuits. The primary objective of any HLS compiler is to generate high-performance hardware accelerators optimized for strict constraints on latency, throughput, silicon area (LUTs, FFs, DSPs), and power consumption. 
+Historically, HLS frameworks have favoured \emph{static scheduling} (SS),
+which resolves every operation-to-cycle assignment at compile time and
+produces a lean, centralised Finite State Machine--Datapath (FSMD) with
+minimal control overhead~\cite{9378784}.
+The strength of this approach lies in its ability to aggressively share
+hardware resources and exploit instruction-level parallelism when the
+workload is regular and predictable.
+However, when a circuit encounters data-dependent branches or
+variable-latency memory accesses, a static scheduler is forced to adopt
+pessimistic assumptions---e.g., stalling the entire pipeline on every
+iteration regardless of whether the stall-inducing path is actually
+taken---thereby sacrificing performance on irregular workloads.
 
-A foundational and highly consequential phase in the HLS pipeline is scheduling—the process of mapping algorithmic operations to specific clock cycles. Historically, HLS frameworks have favored static scheduling \cite{9378784} %
-. By constructing a centralized Finite State Machine (FSM) at compile time, static schedulers can execute deterministic, highly parallelized datapaths with a minimal control footprint. However, this methodology struggles with irregular workloads; when a circuit encounters variable memory latencies or data-dependent control flow, static scheduling relies on pessimistic assumptions that degrade overall performance \cite{9378784} %
-. Conversely, dynamic scheduling paradigms generate dataflow-based elastic circuits where decentralized handshaking protocols dictate execution at runtime, gracefully tolerating unpredictability but often incurring localized area and routing overheads \cite{10.1145/3373087.3375391} %
-.
+\emph{Dynamic scheduling} (DS) addresses this limitation by deferring
+control decisions to runtime.
+Frameworks such as Dynamatic~\cite{10.1145/3373087.3375391} generate
+synchronous dataflow elastic circuits in which every inter-component arc
+carries \textit{valid}/\textit{ready} handshaking signals, allowing
+operations to fire as soon as their inputs are available without waiting
+for a centralised controller.
+This runtime adaptability enables the circuit to exploit actual data
+distributions and bypass idle execution paths, yielding throughput gains
+on irregular kernels.
+The cost, however, is non-trivial: per-arc handshaking registers and
+routing primitives increase area and can lengthen the critical path,
+while the absence of compile-time resource allocation limits the
+opportunities for hardware sharing.
+As Cheng et al.\ demonstrate through the DASS hybrid framework, neither
+paradigm dominates universally---fully static designs are more area
+efficient, while fully dynamic designs outperform them on
+control-intensive code~\cite{9378784}.
 
-With the recent maturation of the Multi-Level Intermediate Representation (MLIR) and the Circuit IR (CIRCT) ecosystems, hardware compiler infrastructure has evolved to support sophisticated, specialized abstractions for diverse scheduling methodologies \cite{10.1145/3689790} %
-. This convergence presents a unique opportunity to evaluate disparate scheduling techniques using equitable compiler backend technologies. 
+Comparing these two paradigms rigorously has historically been
+confounded by toolchain heterogeneity: static schedulers and dynamic
+compilers have typically relied on incompatible intermediate
+representations and backend flows, making it difficult to attribute
+observed differences to the scheduling strategy rather than to incidental
+implementation choices.
+The recent maturation of the Multi-Level Intermediate Representation
+(MLIR) and the Circuit IR (CIRCT) ecosystems changes this picture.
+Kim et al.\ have shown that static and dynamic accelerator IRs share
+substantial structural commonality and can coexist within a single
+MLIR/CIRCT substrate~\cite{10.1145/3689790}, creating the conditions
+for a toolchain-neutral, controlled comparison.
+This work seizes that opportunity: by grounding both the
+Hardware Intermediate Representation (HIR)~\cite{10.1145/3623278.3624767}
+static pipeline and the Dynamatic dynamic pipeline in the same MLIR/CIRCT
+build environment, compiling a shared benchmark suite through both, and
+analysing the resulting synthesized hardware, we isolate the effect of
+the scheduling paradigm on latency, throughput, and FPGA resource usage.
 
-The primary goal of this paper is to empirically investigate the benefits and hardware trade-offs between static and dynamic scheduling by executing controlled experiments across two distinct MLIR/CIRCT-based generation pipelines. Specifically, this study compares the static scheduling abstractions provided by the Hardware Intermediate Representation (HIR) \cite{10.1145/3623278.3624767} %
- against the dynamically scheduled, synchronous dataflow circuits generated by the Dynamatic framework \cite{10.1145/3373087.3375391} %
-. By compiling a shared set of benchmarks through both pipelines and analyzing the resulting synthesized hardware, this work aims to systematically quantify the architectural, performance, and resource trade-offs inherent to each scheduling paradigm.
-\subsection{Contributions}
-In this project, the following contributions are made:
+Enabling this comparison required overcoming several non-trivial
+engineering challenges: the two toolchains have divergent dependency
+trees, incompatible dialect vocabularies, and different expectations about
+how source-level annotations are expressed.
+The contributions of this work are as follows.
+
 \begin{itemize}
-    \item \textbf{Unified MLIR/CIRCT build environment:} This work performs
-          a four-way codebase integration that reconciles the divergent
-          dependency trees of Dynamatic~v2.0 (pre-release v0.3) and an
-          incomplete HIR-based static scheduling pipeline, enabling both
-          tools to build and execute within a single, coherent    
-\item \textbf{Pragma system extensions to Polygeist for HIR generation:}
-      The Polygeist C-to-MLIR frontend is extended with a custom
-      \texttt{\#pragma HLS} handler that parses source annotations---\texttt{PIPELINE}, 
-      \texttt{INTERFACE}, \texttt{BIND\_STORAGE} and \texttt{EXTERN\_FUNC}---and
-      attaches them as first-class MLIR attributes on the corresponding
-      loop, function-argument, local-buffer,and external-call operations.
-      These attributes are subsequently consumed by the \texttt{AffineToHIRPrep}
-      lowering pass to produce well-formed HIR, eliminating the need for manual
-      post-hoc attribute insertion that the original HIR compiler flow requires~
-      \cite{10.1145/3623278.3624767}.
-\item \textbf{AffineToHIRPrep pass:}
-      A new MLIR pass is developed to bridge the gap between the
-      \texttt{hls.*} attribute vocabulary emitted by the pragma handler
-      and the HIR-native attributes expected by the \texttt{AffineToHIR}
-      dialect conversion. The pass translates memory port descriptors,
-      pipeline initiation interval constraints, and external operator
-      latencies into their HIR equivalents, annotates memory access
-      operations with port indices and read latencies, and repairs
-      structural IR issues such as zero-dimensional \texttt{memref}
-      promotion---collectively enabling fully automated C-to-HIR
-      compilation without manual IR editing.    
-\item \textbf{Pragma-annotated Dynamatic benchmark suite for HIR compilation:}
-      The C kernels from the Dynamatic benchmark suite are annotated with
-      \texttt{\#pragma HLS} directives---covering loop \texttt{PIPELINE},
-      \texttt{UNROLL}, \texttt{INTERFACE}, and \texttt{BIND\_STORAGE}
-      configurations---to make them compatible with the HIR compilation
-      pipeline developed in this work. These are the sole benchmarks used
-      in the evaluation; the HIR benchmark suite is excluded because its
-      kernels produce elastic circuits whose resource footprint exceeds the
-      capacity of the FPGA devices available through Intel Quartus Prime.\end{itemize}
 
+  \item \textbf{Unified MLIR/CIRCT build environment.}
+        We perform a four-way codebase integration that reconciles the
+        divergent dependency trees of Dynamatic~v2.0 and an incomplete
+        HIR-based pipeline, enabling both tools to build and execute
+        within a single, coherent CMake environment.
+
+  \item \textbf{Pragma system extensions to Polygeist for HIR generation.}
+        We extend the Polygeist C-to-MLIR frontend with a custom
+        \texttt{\#pragma HLS} handler that parses
+        \texttt{PIPELINE}, \texttt{INTERFACE}, \texttt{BIND\_STORAGE},
+        and \texttt{EXTERN\_FUNC} directives and attaches them as
+        first-class MLIR attributes, eliminating the need for manual
+        post-hoc IR editing required by the original HIR flow.
+
+  \item \textbf{\texttt{AffineToHIRPrep} pass.}
+        We develop a new MLIR pass that bridges the \texttt{hls.*}
+        attribute vocabulary emitted by the pragma handler and the
+        HIR-native attributes expected by the \texttt{AffineToHIR}
+        dialect conversion, collectively enabling fully automated
+        C-to-HIR compilation.
+
+  \item \textbf{Pragma-annotated Dynamatic benchmark suite for HIR.}
+        We annotate the Dynamatic C benchmark kernels with
+        \texttt{\#pragma HLS} directives, producing the shared benchmark
+        suite on which both pipelines are evaluated and all
+        area/throughput comparisons are grounded.
+
+\end{itemize}
 % ===========================================================
 \section{Related Work}
 % ===========================================================
