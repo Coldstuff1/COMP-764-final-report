@@ -255,7 +255,29 @@ derived from the port descriptors established in step~2; and
 are renamed to the \texttt{II} token consumed by the ILP scheduler.
 After all four steps, every \texttt{hls.*} attribute has been consumed
 and the IR is structurally ready for \texttt{AffineToHIR} without
-further manual editing.
+further manual editing. Figure~\ref{fig:prep-before-after} shows a
+side-by-side view of the \texttt{gesummv} kernel IR immediately before
+and after the pass; each transformation step described above can be
+located by comparing the corresponding lines across the two listings.
+
+\begin{figure*}[htbp]
+  \centering
+  \includegraphics[width=0.49\linewidth]{figs/affine.png}
+  \hfill
+  \includegraphics[width=0.49\linewidth]{figs/prepped.png}
+  \caption{\texttt{gesummv} kernel IR before (left) and after (right)
+           the \texttt{AffineToHIRPrep} pass. Each transformation step
+           described in Section~\ref{sec:affine-to-hir-prep} can be
+           located by comparing the corresponding lines across the two
+           listings: external function \texttt{hls.INTERFACE\_LATENCY}
+           attributes are renamed to \texttt{hir.delay} (Step~1);
+           \texttt{memref} arguments receive \texttt{hir.memref.ports}
+           arrays (Step~2); load/store/call sites gain
+           \texttt{hir.memref\_port} and \texttt{result\_delays}
+           annotations (Step~3); and \texttt{hls.PIPELINE\_II} is
+           renamed to \texttt{II} on \texttt{affine.for} loops (Step~4).}
+  \label{fig:prep-before-after}
+\end{figure*}
 
 % ===========================================================
 \section{Evaluation}
@@ -324,6 +346,22 @@ of HIR stems from its ability to compute tight, fixed IIs via SDC-based
 modulo scheduling, whereas Dynamatic's runtime token coordination
 manifests as extra cycles on statically predictable workloads.
 
+\paragraph{Combined Interpretation.}
+Taken together, the five metrics paint a coherent picture. On
+regular, affine-dominated kernels, the statically scheduled HIR pipeline
+dominates across area and latency while the two approaches achieve
+comparable maximum frequencies. The area savings are dramatic---often
+exceeding $4\times$ in ALUTs and $5\times$ in registers---because HIR's
+compile-time resource sharing and FSM-based control eliminate the per-arc
+handshaking infrastructure inherent to elastic circuits, while its
+SDC-based modulo scheduler achieves tighter initiation intervals than
+Dynamatic's runtime token flow~\cite{9378784}. These results confirm the
+predictions of Cheng et al.: the critical insight is not the directional
+outcome---static scheduling wins on regular workloads---but the
+\emph{magnitude} of the gap, which underscores the practical cost of the
+dynamic paradigm's generality when that generality is not exploited by
+the workload.
+
 \begin{figure*}[htbp]
     \centering
     \begin{subfigure}[b]{0.48\linewidth}
@@ -383,6 +421,22 @@ per-arc handshaking infrastructure inherent to elastic circuits, and its
 SDC-based modulo scheduler achieves tighter IIs than Dynamatic's runtime
 token flow on workloads without data-dependent control divergence.
 
+The interpretation of these results must, however, be tempered by the
+conditions under which they were obtained. The benchmark suite was drawn
+from kernels designed to exercise Dynamatic's scheduling capabilities,
+yet the kernels selected for evaluation are precisely those whose control
+flow is regular and memory access patterns are statically
+analysable---exactly the workload regime in which static scheduling is
+predicted to dominate~\cite{9378784}. The dynamic paradigm's principal
+claimed advantage---runtime adaptation to data-dependent control
+divergence and variable-latency memory accesses---is not exercised by
+any benchmark in the present suite, and consequently its overheads
+appear without compensating benefit. The principal contribution of this
+comparison is therefore to quantify the \emph{magnitude} of that
+overhead under controlled, toolchain-neutral conditions, demonstrating
+that it persists even when both pipelines share a common compiler
+infrastructure.
+
 \subsection{Limitations}
 \label{sec:limitations}
 
@@ -418,12 +472,19 @@ results~\cite{10.1145/3689790} make a hybrid scheduler---integrating
 HIR-style statically scheduled regions as black-box components within a
 Dynamatic-style elastic dataflow graph---an attainable engineering goal,
 eliminating the cross-tool boundary that DASS currently traverses.
+Coupling such a hybrid scheduler with an automatic analysis of
+loop-carried dependence patterns, predicate-driven control flow, and
+memory access regularity in the MLIR affine IR would close the loop on
+a fully automated, pragma-free, paradigm-aware HLS flow.
+
 Further extensions include vendor-neutral synthesis across Quartus Prime
 and Vivado, design-space exploration sweeping pipelining factors and
 clock targets to yield Pareto frontiers in the area--throughput plane,
 and power characterisation incorporating Quartus PowerPlay or Vivado XPE
 to assess the energy cost of per-arc handshaking under realistic
 activity profiles.
+
+\end{document}
 
 % ===========================================================
 \section{Conclusion}
