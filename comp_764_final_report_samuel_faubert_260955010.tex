@@ -59,7 +59,7 @@ This enables aggressive resource sharing and instruction-level
 parallelism on regular workloads, but forces pessimistic assumptions
 under data-dependent branches or variable-latency memory accesses.
 \emph{Dynamic scheduling} (DS), as implemented in
-Dynamatic~\cite{10.1145/3373087.3375391}, generates elastic circuits
+Dynamatic 2.0~\cite{10.1145/3373087.3375391}, generates elastic circuits
 where every inter-component arc carries \textit{valid}/\textit{ready}
 handshaking signals, allowing operations to fire as soon as their inputs
 are available. This runtime adaptability benefits irregular kernels but
@@ -74,7 +74,7 @@ show that static and dynamic accelerator IRs share substantial
 structural commonality and can coexist within a single substrate,
 enabling a toolchain-neutral, controlled comparison. This work seizes
 that opportunity by grounding both the HIR~\cite{10.1145/3623278.3624767}
-static pipeline and the Dynamatic dynamic pipeline in a shared
+static pipeline and the Dynamatic 2.0 dynamic pipeline in a shared
 MLIR/CIRCT build environment and evaluating them on a common benchmark
 suite, thereby isolating the scheduling paradigm as the variable under
 study.
@@ -85,7 +85,7 @@ The contributions of this work are as follows.
 \begin{itemize}
   \item \textbf{Unified MLIR/CIRCT build environment.} A four-way
         codebase integration reconciles the divergent dependency trees
-        of Dynamatic~v2.0 and an incomplete HIR-based pipeline,
+        of Dynamatic 2.0 and an incomplete HIR-based pipeline,
         enabling both tools to build within a single CMake environment.
 
   \item \textbf{Pragma system extensions to Polygeist for HIR.}
@@ -101,8 +101,8 @@ The contributions of this work are as follows.
         \texttt{AffineToHIR} dialect conversion, enabling fully
         automated C-to-HIR compilation.
 
-  \item \textbf{Pragma-annotated Dynamatic benchmark suite.} The
-        Dynamatic C benchmark kernels are annotated with
+  \item \textbf{Pragma-annotated Dynamatic 2.0 benchmark suite.} The
+        Dynamatic 2.0 C benchmark kernels are annotated with
         \texttt{\#pragma HLS} directives, producing the shared
         benchmark suite on which both pipelines are evaluated.
 \end{itemize}
@@ -138,15 +138,15 @@ void fir(int di[N], int idx[N]) {
 HIR's ILP-based modulo scheduler chains the load, multiply, and
 accumulate into a fixed pipeline meeting the requested II, emitting an
 FSMD with a single multiplier, a single adder, and no per-arc
-handshaking~\cite{10.1145/3623278.3624767}. Dynamatic compiles the same
+handshaking~\cite{10.1145/3623278.3624767}. Dynamatic 2.0 compiles the same
 source into an elastic circuit where the loop-back path through
 \texttt{tmp} routes tokens through fork, join, and buffer
 components~\cite{10.1145/3373087.3375391}---infrastructure that is
 the price of generality but yields no compensating gain on this regular
 kernel, inflating area and lengthening the recurrence's critical
 path~\cite{9378784}. This example motivates three empirical questions:
-(1)~do HIR's static schedules match or exceed Dynamatic's cycle counts
-on affine kernels? (2)~how large is Dynamatic's area premium in ALUTs,
+(1)~do HIR's static schedules match or exceed Dynamatic 2.0's cycle counts
+on affine kernels? (2)~how large is Dynamatic 2.0's area premium in ALUTs,
 registers, and I/O pins? (3)~does valid/ready arbitration reduce
 achievable clock frequency relative to HIR's FSM-based controller?
 
@@ -160,14 +160,15 @@ directly into an MLIR-based IR, enabling synchronisation-free loop
 pipelining without a hand-written FSM, but assumes fixed-latency
 operations and predictable control flow. This work uses HIR as the
 static evaluation pipeline, extending its frontend with a pragma handler
-to target the Dynamatic benchmark suite.
+to target the Dynamatic 2.0 benchmark suite.
 
-\textbf{Dynamic scheduling via Dynamatic.}
-Dynamatic~\cite{10.1145/3373087.3375391} translates C/C++ into elastic
+\textbf{Dynamic scheduling via Dynamatic 2.0.}
+Dynamatic 2.0~\cite{10.1145/3373087.3375391} translates C/C++ into elastic
 circuits communicating exclusively through valid/ready handshaking,
 tolerating variable-latency events at the cost of per-arc overhead,
-reduced resource sharing, and potential critical-path lengthening. This
-work uses Dynamatic as the dynamic evaluation pipeline.
+reduced resource sharing, and potential critical-path lengthening.
+Dynamatic 2.0 is Dynamatic 1.0 ported to CIRCT. This
+work uses Dynamatic 2.0 as the dynamic evaluation pipeline.
 
 \textbf{Combining both paradigms: DASS.}
 DASS~\cite{9378784} identifies regions amenable to static scheduling and
@@ -175,7 +176,7 @@ wraps them as black boxes inside an otherwise dynamic dataflow graph,
 recovering ${\approx}74\%$ of the area savings of a fully static design
 while achieving $135\%$ of a fully dynamic design's performance.
 However, DASS operates across two separate tool flows (Vivado HLS and
-Dynamatic) without a shared IR, making it difficult to attribute
+Dynamatic 2.0) without a shared IR, making it difficult to attribute
 observed differences solely to the scheduling strategy. This work is
 motivated by DASS's insight but grounds both schedulers in a unified
 MLIR/CIRCT substrate for a controlled, toolchain-neutral comparison.
@@ -195,12 +196,12 @@ comparative evaluation in this paper.
 \subsection{Codebase Integration}
 
 A prerequisite for a controlled comparison is a common toolchain
-foundation. Dynamatic~v2.0 and the HIR static scheduling
+foundation. Dynamatic 2.0 and the HIR static scheduling
 pipeline~\cite{10.1145/3623278.3624767} were built on incompatible
 snapshots of the MLIR/CIRCT ecosystem~\cite{circt,lattner2021mlir},
 each maintaining its own fork of CIRCT and Polygeist with bespoke
 dialect extensions and pinned dependency versions. A systematic
-four-way integration was required: the Dynamatic forks of CIRCT and
+four-way integration was required: the Dynamatic 2.0 forks of CIRCT and
 Polygeist were adopted as authoritative baselines, and all HIR-specific
 dialect definitions, scheduling passes, and lowering infrastructure were
 ported forward. This involved updating CMake configurations and LLVM API
@@ -262,10 +263,10 @@ located by comparing the corresponding lines across the two listings.
 
 \begin{figure*}[htbp]
   \centering
-  \includegraphics[width=0.49\linewidth]{figs/affine.png}
-  \hfill
-  \includegraphics[width=0.49\linewidth]{figs/prepped.png}
-  \caption{\texttt{gesummv} kernel IR before (left) and after (right)
+  \includegraphics[width=\linewidth]{figs/affine.png}
+  
+  \includegraphics[width=\linewidth]{figs/prepped.png}
+  \caption{\texttt{gesummv} kernel IR before (top) and after (bottom)
            the \texttt{AffineToHIRPrep} pass. Each transformation step
            described in Section~\ref{sec:affine-to-hir-prep} can be
            located by comparing the corresponding lines across the two
@@ -285,13 +286,13 @@ located by comparing the corresponding lines across the two listings.
 
 \subsection{Benchmark Selection and Experimental Setup}
 
-All benchmark kernels are drawn from the Dynamatic test suite---a
+All benchmark kernels are drawn from the Dynamatic 2.0 test suite---a
 collection of small-to-medium C kernels designed to exercise elastic
 dataflow scheduling~\cite{10.1145/3373087.3375391}. HIR's own
 benchmarks were excluded because their structural complexity produces
-Dynamatic netlists that exceed the placement-and-routing capacity of
+Dynamatic 2.0 netlists that exceed the placement-and-routing capacity of
 the available FPGA target, rendering a fair comparison impossible.
-The Dynamatic source files were annotated with \texttt{\#pragma HLS}
+The Dynamatic 2.0 source files were annotated with \texttt{\#pragma HLS}
 directives (\texttt{PIPELINE}, \texttt{INTERFACE}, \texttt{BIND\_STORAGE})
 as the sole modification; algorithmic content and array dimensions
 remain unchanged. Both pipelines were synthesised with Quartus Prime
@@ -302,8 +303,9 @@ constraint; correctness was verified in ModelSim.
 \label{sec:results}
 
 Figure~\ref{fig:all-results} presents post-synthesis ratios
-(Dynamatic$/$HIR) across the seven benchmarks; ratios above one
-indicate Dynamatic consumes more of that resource.
+(Dynamatic 2.0$/$HIR) across the seven benchmarks; ratios above one
+indicate Dynamatic 2.0 consumes more of that resource. Higher is worse
+in all cases except for max frequency, where higher is better.
 
 \paragraph{Area: ALUTs and Registers.}
 The area overhead of dynamic scheduling is substantial and consistent
@@ -312,14 +314,14 @@ from ${\approx}2\times$ (\texttt{simple\_example}) to $6.5\times$
 (\texttt{sumi3\_mem}), with a mean of $4.75\times$. Register ratios are
 more pronounced: \texttt{FIR} and \texttt{sumi3\_mem} exceed $11\times$
 and $12.5\times$, respectively. These costs arise because every
-inter-component arc in Dynamatic carries valid/ready handshaking logic,
+inter-component arc in Dynamatic 2.0 carries valid/ready handshaking logic,
 and the absence of compile-time resource sharing forces functional unit
 replication that a static scheduler would avoid~\cite{9378784}.
 
 \paragraph{I/O: GPIO Pin Usage.}
-Dynamatic designs require $3.5$--$5.4\times$ the GPIO pins of their HIR
+Dynamatic 2.0 designs require $3.5$--$5.4\times$ the GPIO pins of their HIR
 counterparts (Figure~\ref{fig:pins}). The ratio is uniform across
-benchmarks, reflecting a structural property: Dynamatic's top-level
+benchmarks, reflecting a structural property: Dynamatic 2.0's top-level
 entity exposes valid, ready, and data ports for every function argument
 and memory interface, whereas HIR's FSM multiplexes memory accesses
 through a compact internal port map.
@@ -343,7 +345,7 @@ $1.5\times$, and $1.4\times$. \texttt{vector\_rescale} achieves cycle
 parity (${\approx}1.0\times$)---a single regular loop nest where dynamic
 scheduling adds overhead without compensating flexibility. The advantage
 of HIR stems from its ability to compute tight, fixed IIs via SDC-based
-modulo scheduling, whereas Dynamatic's runtime token coordination
+modulo scheduling, whereas Dynamatic 2.0's runtime token coordination
 manifests as extra cycles on statically predictable workloads.
 
 \paragraph{Combined Interpretation.}
@@ -355,7 +357,7 @@ exceeding $4\times$ in ALUTs and $5\times$ in registers---because HIR's
 compile-time resource sharing and FSM-based control eliminate the per-arc
 handshaking infrastructure inherent to elastic circuits, while its
 SDC-based modulo scheduler achieves tighter initiation intervals than
-Dynamatic's runtime token flow~\cite{9378784}. These results confirm the
+Dynamatic 2.0's runtime token flow~\cite{9378784}. These results confirm the
 predictions of Cheng et al.: the critical insight is not the directional
 outcome---static scheduling wins on regular workloads---but the
 \emph{magnitude} of the gap, which underscores the practical cost of the
@@ -366,13 +368,13 @@ the workload.
     \centering
     \begin{subfigure}[b]{0.48\linewidth}
         \includegraphics[width=\linewidth]{figs/alut-graph.png}
-        \caption{ALUT ratio (Dynamatic/HIR). Ratio $>1$: Dynamatic uses more ALUTs.}
+        \caption{ALUT ratio (Dynamatic 2.0/HIR). Ratio $>1$: Dynamatic 2.0 uses more ALUTs.}
         \label{fig:aluts}
     \end{subfigure}
     \hfill
     \begin{subfigure}[b]{0.48\linewidth}
         \includegraphics[width=\linewidth]{figs/registers-graph.png}
-        \caption{Register ratio (Dynamatic/HIR). Ratio $>1$: Dynamatic uses more registers.}
+        \caption{Register ratio (Dynamatic 2.0/HIR). Ratio $>1$: Dynamatic 2.0 uses more registers.}
         \label{fig:registers}
     \end{subfigure}
 
@@ -380,13 +382,13 @@ the workload.
 
     \begin{subfigure}[b]{0.48\linewidth}
         \includegraphics[width=\linewidth]{figs/pins-graph.png}
-        \caption{GPIO pin ratio (Dynamatic/HIR). Ratio $>1$: Dynamatic uses more pins.}
+        \caption{GPIO pin ratio (Dynamatic 2.0/HIR). Ratio $>1$: Dynamatic 2.0 uses more pins.}
         \label{fig:pins}
     \end{subfigure}
     \hfill
     \begin{subfigure}[b]{0.48\linewidth}
         \includegraphics[width=\linewidth]{figs/fmax-graph.png}
-        \caption{$F_{\max}$ ratio (Dynamatic/HIR). Ratio $>1$: Dynamatic achieves higher frequency.}
+        \caption{$F_{\max}$ ratio (Dynamatic 2.0/HIR). Ratio $>1$: Dynamatic 2.0 achieves higher frequency.}
         \label{fig:fmax}
     \end{subfigure}
 
@@ -394,11 +396,11 @@ the workload.
 
     \begin{subfigure}[b]{0.48\linewidth}
         \includegraphics[width=\linewidth]{figs/cycles-graph.png}
-        \caption{Cycle-count ratio (Dynamatic/HIR). Ratio $>1$: Dynamatic takes more cycles.}
+        \caption{Cycle-count ratio (Dynamatic 2.0/HIR). Ratio $>1$: Dynamatic 2.0 takes more cycles.}
         \label{fig:cycles}
     \end{subfigure}
 
-    \caption{Comparative hardware metrics between HIR (static) and Dynamatic (dynamic)
+    \caption{Comparative hardware metrics between HIR (static) and Dynamatic 2.0 (dynamic)
              across seven benchmark kernels synthesised for the Arria~10AX115N4F45I3SG FPGA.}
     \label{fig:all-results}
 \end{figure*}
@@ -418,12 +420,12 @@ of magnitude larger than sometimes assumed, and persist even under a
 shared compiler infrastructure. The key mechanism is straightforward:
 HIR's compile-time resource sharing and FSM-based control eliminate the
 per-arc handshaking infrastructure inherent to elastic circuits, and its
-SDC-based modulo scheduler achieves tighter IIs than Dynamatic's runtime
+SDC-based modulo scheduler achieves tighter IIs than Dynamatic 2.0's runtime
 token flow on workloads without data-dependent control divergence.
 
 The interpretation of these results must, however, be tempered by the
 conditions under which they were obtained. The benchmark suite was drawn
-from kernels designed to exercise Dynamatic's scheduling capabilities,
+from kernels designed to exercise Dynamatic 2.0's scheduling capabilities,
 yet the kernels selected for evaluation are precisely those whose control
 flow is regular and memory access patterns are statically
 analysable---exactly the workload regime in which static scheduling is
@@ -446,14 +448,14 @@ the regime where static scheduling is predicted to dominate~\cite{9378784}.
 Dynamic scheduling's principal advantage---runtime adaptation to
 data-dependent control divergence---is not exercised by any benchmark
 in the suite; its overheads therefore appear without compensating
-benefit. Additionally, Dynamatic was originally tuned for Xilinx FPGAs
-and the Vivado toolchain, whereas both pipelines were synthesised here
-through Quartus Prime on an Intel Arria~10 device, introducing
-backend-specific optimisation behaviour that may penalise Dynamatic
-relative to its native target. All metrics were extracted from a single
-post-synthesis report per benchmark under a single pragma-prescribed
-configuration, with no design-space exploration. Finally, since
-Dynamatic operates on unannotated source while HIR requires
+benefit. Additionally, both HIR and Dynamatic 2.0 were originally tuned for
+Xilinx FPGAs and the Vivado toolchain, whereas both pipelines were
+synthesised here through Quartus Prime on an Intel Arria~10 device,
+introducing backend-specific optimisation behaviour that may penalise both
+relative to their native target. All metrics were extracted
+from a single post-synthesis report per benchmark under a single
+pragma-prescribed configuration, with no design-space exploration. Finally, since
+Dynamatic 2.0 operates on unannotated source while HIR requires
 user-supplied pragmas, there is no mechanical guarantee that both
 compilers are presented with semantically equivalent scheduling intent.
 
@@ -470,7 +472,7 @@ the paradigm trade-off~\cite{9378784}. Complementary to this, the
 shared MLIR/CIRCT substrate and Kim et al.'s IR-unification
 results~\cite{10.1145/3689790} make a hybrid scheduler---integrating
 HIR-style statically scheduled regions as black-box components within a
-Dynamatic-style elastic dataflow graph---an attainable engineering goal,
+Dynamatic 2.0-style elastic dataflow graph---an attainable engineering goal,
 eliminating the cross-tool boundary that DASS currently traverses.
 Coupling such a hybrid scheduler with an automatic analysis of
 loop-carried dependence patterns, predicate-driven control flow, and
@@ -491,11 +493,11 @@ activity profiles.
 This work has presented a controlled, toolchain-neutral comparison
 between static and dynamic HLS scheduling, grounded in a unified
 MLIR/CIRCT substrate hosting both the HIR static
-pipeline~\cite{10.1145/3623278.3624767} and the Dynamatic dynamic
+pipeline~\cite{10.1145/3623278.3624767} and the Dynamatic 2.0 dynamic
 pipeline~\cite{10.1145/3373087.3375391}. The required engineering
 contributions---a four-way dependency reconciliation, an HLS pragma
 handler for Polygeist, an \texttt{AffineToHIRPrep} bridge pass, and a
-pragma-annotated Dynamatic benchmark suite---collectively enable
+pragma-annotated Dynamatic 2.0 benchmark suite---collectively enable
 C-to-hardware compilation through both flows from a single codebase.
 
 Across seven kernels synthesised under identical 500~MHz constraints,
@@ -504,7 +506,7 @@ and faster hardware: mean ALUTs and registers were reduced by
 ${\approx}4.75\times$ and up to $12.5\times$; GPIO pins fell by
 $3.5$--$5.4\times$; and execution latency fell by $1.4$--$2.95\times$
 on six of the seven kernels. Maximum frequencies were broadly
-comparable, with Dynamatic incurring at most a 26\% penalty.
+comparable, with Dynamatic 2.0 incurring at most a 26\% penalty.
 
 These results strongly suggest that committing an entire design to
 dynamic scheduling is wasteful when the program contains substantial
