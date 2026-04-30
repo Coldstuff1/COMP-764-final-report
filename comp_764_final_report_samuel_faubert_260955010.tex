@@ -222,39 +222,52 @@ dominates universally~\cite{9378784}.
 
 % ----------------------------------------------------------
 \subsection{Motivating Example}
+\label{sec:motiv}
 % ----------------------------------------------------------
 
-Consider the kernel in Listing~\ref{lst:motiv}, where array \texttt{b}
-is conditionally updated depending on a runtime predicate derived from
-\texttt{a[i]}.
+Consider the FIR reduction kernel of Listing~\ref{lst:motiv}, drawn
+from the benchmark suite used in the evaluation. The loop accumulates
+pairwise products through a unit-latency multiplier and a
+combinational adder, and the user pragma requests an Initiation
+Interval (II) of one.
 
 \begin{figure}[h]
 \begin{lstlisting}
-#define N 128
-void conditional_acc(int a[N], int b[N]) {
+#define N 1024
+#pragma HLS extern_func variable=add_i32 latency=0
+#pragma HLS extern_func variable=mul_i32 latency=1
+int add_i32(int a, int b);
+int mul_i32(int a, int b);
+
+void fir(int di[N], int idx[N]) {
+#pragma HLS INTERFACE port=di  storage_type=ram_1p rd_latency=1
+#pragma HLS INTERFACE port=idx storage_type=ram_1p rd_latency=1
+  int tmp = 0;
   for (int i = 0; i < N; i++) {
-    if (a[i] > 0)
-      b[i] = b[i] + a[i];  // data-dependent write
+#pragma HLS pipeline II = 1
+    tmp = add_i32(tmp, mul_i32(idx[i], di[N - 1 - i]));
   }
 }
 \end{lstlisting}
-\caption{Motivating example: a loop with a data-dependent conditional write.}
+\caption{Motivating example: an affine reduction with a loop-carried
+         accumulator and a target II of one.}
 \label{lst:motiv}
 \end{figure}
 
 \paragraph{Static schedule.}
-Because the compiler cannot determine which iterations will execute the
-write, the static scheduler conservatively sets the loop II to the
-full load-modify-store latency, stalling the pipeline on every iteration
-where \texttt{a[i]\,$\leq$\,0} and the write is skipped.
+HIR's ILP-based modulo scheduler chains the load, multiply, and
+accumulate into a fixed pipeline that meets the requested II,
+emitting an FSMD with a single multiplier, a single adder, and no
+per-arc handshaking~\cite{10.1145/3623278.3624767}.
 
 \paragraph{Dynamic schedule.}
-The Dynamatic elastic circuit imposes no global stall: iterations that
-skip the write bypass it immediately, and backpressure activates only
-on genuine read-after-write hazards.
-Throughput adapts to the actual data distribution at the cost of larger
-circuit area from per-arc handshake registers and routing
-primitives~\cite{10.1145/3373087.3375391}.
+Dynamatic compiles the same source into an elastic circuit in which
+every dataflow edge carries \textit{valid}/\textit{ready} logic and
+the loop-back path through \texttt{tmp} routes tokens through fork,
+join, and buffer components~\cite{10.1145/3373087.3375391}. This
+infrastructure is the price of generality: on a kernel this regular,
+it is paid without compensating gain, inflating area and lengthening
+the recurrence's critical path~\cite{9378784}.
 
 % ----------------------------------------------------------
 \subsection{Research Questions}
@@ -262,8 +275,7 @@ primitives~\cite{10.1145/3373087.3375391}.
 
 This example motivates three empirical questions addressed in this study.
 (1)~\textbf{Throughput:} For regular, affine kernels, does HIR's static
-schedule match or exceed Dynamatic's cycle counts, and does DS yield
-measurable gains for irregular kernels?
+schedule match or exceed Dynamatic's cycle counts?
 (2)~\textbf{Area:} How large is the area premium---in ALUTs, Registers,
 and DSPs---incurred by Dynamatic's per-arc handshaking relative to HIR's
 statically scheduled datapath?
