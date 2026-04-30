@@ -555,13 +555,13 @@ unchanged, preserving the integrity of the comparison.
     \centering
     \begin{subfigure}[b]{0.48\linewidth}
         \includegraphics[width=\linewidth]{figs/alut-graph.png}
-        \caption{Number of ALUTs.}
+        \caption{Ratio of Number of ALUTs used by Dynamatic compared to HIR. A ratio > 1 means Dynamatic uses that many times more ALUTs than HIR.}
         \label{fig:aluts}
     \end{subfigure}
     \hfill
     \begin{subfigure}[b]{0.48\linewidth}
         \includegraphics[width=\linewidth]{figs/registers-graph.png}
-        \caption{Number of Registers.}
+        \caption{Ratio of Number of Registers used by Dynamatic compared to HIR. A ratio > 1 means Dynamatic uses that many times more Registers than HIR.}
         \label{fig:registers}
     \end{subfigure}
 
@@ -569,14 +569,22 @@ unchanged, preserving the integrity of the comparison.
 
     \begin{subfigure}[b]{0.48\linewidth}
         \includegraphics[width=\linewidth]{figs/pins-graph.png}
-        \caption{Number of IO Pins.}
+        \caption{Ratio of Number of IO Pins used by Dynamatic compared to HIR. A ratio > 1 means Dynamatic uses that many times more IO Pins than HIR.}
         \label{fig:pins}
     \end{subfigure}
     \hfill
     \begin{subfigure}[b]{0.48\linewidth}
         \includegraphics[width=\linewidth]{figs/fmax-graph.png}
-        \caption{Maximum Frequency (\(F_{\max}\)).}
+        \caption{Ratio of Maximum Frequencies (\(F_{\max}\)) between Dynamatic and HIR. A ratio > 1 means Dynamatic's max frequency is that many times greater than HIR's.}
         \label{fig:fmax}
+    \end{subfigure}
+
+    \vspace{1em}
+
+    \begin{subfigure}[b]{0.48\linewidth}
+        \includegraphics[width=\linewidth]{figs/cycles-graph.png}
+        \caption{Ratio of Number of Cycles between Dynamatic and HIR. A ratio > 1 means Dynamatic takes that many times more cycles than HIR.}
+        \label{fig:cycles}
     \end{subfigure}
 
     \caption{Comparative hardware metrics between HIR (static) and Dynamatic (dynamic) compilation techniques across seven benchmark kernels synthesized for the Arria 10AX115N4F45I3SG FPGA.}
