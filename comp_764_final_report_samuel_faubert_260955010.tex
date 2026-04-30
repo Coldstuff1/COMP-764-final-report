@@ -715,14 +715,260 @@ workload.
 
 \section{Discussion}
 
+The empirical comparison presented in
+Section~\ref{sec:results} establishes that, on the regular,
+affine-dominated kernels of the Dynamatic test suite, the statically
+scheduled HIR pipeline produces dramatically smaller hardware
+($\approx\!4.75\times$ fewer ALUTs, up to $12.5\times$ fewer
+registers, and $3.5$--$5.4\times$ fewer GPIO pins) and shorter
+execution times ($1.4$--$2.95\times$ fewer cycles in six of seven
+benchmarks) than the dynamically scheduled Dynamatic pipeline, while
+the two paradigms achieve broadly comparable maximum frequencies on
+the target Arria~10 device. These findings are not in tension with
+the literature: they recapitulate, within a single MLIR/CIRCT
+substrate, the qualitative trends reported by Cheng et
+al.~\cite{9378784} and Josipovi\'{c} et
+al.~\cite{10.1145/3373087.3375391}, while quantifying the
+\emph{magnitude} of the gap on a controlled, toolchain-neutral
+benchmark suite. The principal contribution of this comparison is
+therefore not the directional outcome---static scheduling wins on
+regular workloads---but the demonstration that the area and latency
+penalties of dynamic scheduling on such workloads are an order of
+magnitude larger than is sometimes assumed, and that they persist even
+when both pipelines share a common compiler infrastructure.
+
+The interpretation of these results must, however, be tempered by an
+acknowledgment of the conditions under which they were obtained. The
+benchmark suite was drawn entirely from kernels designed to exercise
+Dynamatic's scheduling capabilities, yet---as a practical matter of
+synthesisability on the available FPGA target---the kernels selected
+for evaluation are precisely those whose control flow is regular and
+whose memory access patterns are statically analysable. This is
+exactly the workload regime in which Cheng et al.\ predict static
+scheduling to dominate~\cite{9378784}, and the observed results
+confirm that prediction. The dynamic paradigm's principal claimed
+advantage---runtime adaptation to data-dependent control divergence
+and variable-latency memory accesses---is not exercised by any
+benchmark in the present suite, and consequently its overheads appear
+without compensating benefits. A complete characterisation of the
+trade-off therefore requires extending the evaluation to kernels that
+genuinely stress dynamic scheduling's strengths, a direction taken up
+in Section~\ref{sec:future-work} below.
+
 \subsection{Limitations}
-[Discuss the current limitations of the approach.]
+\label{sec:limitations}
+
+Several methodological and infrastructural limitations of the present
+study merit explicit discussion, both to qualify the conclusions
+drawn above and to delineate the boundary of their generalisability.
+
+\paragraph{Benchmark coverage.}
+The evaluation comprises seven kernels drawn from a single test
+suite, all of which exhibit predominantly affine control flow and
+statically determinable memory access patterns. As discussed above,
+this profile is structurally biased toward static scheduling: a fair
+quantitative assessment of dynamic scheduling's relative merits
+requires kernels with data-dependent branching, irregular memory
+access patterns (e.g.\ pointer chasing, sparse data structures), and
+variable-latency operations, none of which are well represented in
+the present suite. The HIR-native benchmark set, which contains
+larger affine workloads such as systolic matrix
+multiplication~\cite{10.1145/3623278.3624767}, was excluded because
+the resulting Dynamatic netlists exceeded the placement-and-routing
+capacity of the available Arria~10 device; this exclusion further
+constrains the workload regime over which the present comparison is
+valid.
+
+\paragraph{Toolchain and target asymmetries.}
+Although both pipelines were grounded in a unified MLIR/CIRCT build
+environment, residual asymmetries remain. Dynamatic's reference flow
+was originally developed and tuned against Xilinx FPGAs and the
+Vivado toolchain~\cite{10.1145/3373087.3375391}, whereas the
+synthesis target adopted here is an Intel Arria~10 device flowed
+through Quartus Prime. While this choice was dictated by the
+availability of HIR's Quartus-compatible backend, it introduces
+backend-specific optimisation behaviour---particularly around
+register retiming, memory inference, and timing closure---that may
+penalise Dynamatic relative to its native target. The $F_{\max}$
+results in particular should be read with this caveat in mind, since
+critical-path optimisation is highly sensitive to vendor-specific
+physical synthesis heuristics.
+
+\paragraph{Single-point synthesis.}
+All metrics reported in this study are extracted from a single
+post-synthesis report per benchmark, with synthesis constraints
+held fixed at a $500$~MHz target clock. No design-space exploration
+was performed over alternative pipelining factors, unrolling depths,
+memory port configurations, or clock targets; each pipeline was
+evaluated under a single, pragma-prescribed configuration. The
+absolute area and latency numbers are therefore representative of one
+operating point in a much larger configuration space, and small
+changes to the pragma annotations (or to Dynamatic's buffer-placement
+heuristics) could shift individual ratios by non-trivial amounts.
+
+\paragraph{Pragma equivalence.}
+The HIR pipeline consumes pragmas added to the Dynamatic source
+files in order to drive its scheduler, while Dynamatic itself
+operates on the unannotated source. Although the pragma
+annotations were chosen to express the structural pipelining
+opportunities that Dynamatic's elastic compilation discovers
+implicitly, there is no mechanical guarantee that the two pipelines
+are presented with semantically equivalent scheduling intent. This
+asymmetry is unavoidable given the differing input contracts of the
+two compilers, but it is a confounder that cannot be entirely
+eliminated within the present methodology.
+
+\paragraph{Exclusion of DSP and BRAM metrics.}
+The reported area metrics cover ALUTs, registers, and GPIO pins,
+which together capture the bulk of the synthesis footprint for the
+selected kernels. DSP block utilisation was not reported because
+the kernels in the suite use predominantly integer arithmetic that
+maps to soft logic rather than hard DSP slices, and BRAM utilisation
+was likewise minimal at the chosen array sizes. A study targeting
+larger floating-point workloads would need to incorporate these
+metrics explicitly, since the relative DSP and BRAM consumption of
+static and dynamic schedulers may differ from the soft-logic ratios
+reported here~\cite{10.1145/3623278.3624767}.
 
 \subsection{Future Work}
-[Identify potential directions for future research.]
+\label{sec:future-work}
+
+The unified MLIR/CIRCT compilation infrastructure developed in this
+work provides a foundation on which several lines of investigation
+can now be pursued without re-incurring the integration cost
+documented in Section~\ref{sec:methodology}.
+
+\paragraph{Irregular and control-dominated benchmarks.}
+The most immediate and consequential extension is the construction
+of a benchmark suite designed to stress dynamic scheduling's
+adaptive strengths: kernels with data-dependent loop bounds,
+non-affine memory accesses, sparse linear algebra, graph traversals,
+and pointer-based data structures. Such workloads are expected to
+invert, or at least narrow, the cycle-count advantage observed for
+HIR in the present study, and would allow the area-versus-throughput
+trade-off to be characterised over the full spectrum of workload
+regularity rather than only at the regular extremum. Cheng et
+al.~\cite{9378784} report that dynamic scheduling can outperform
+static scheduling by significant margins on such kernels, and
+quantifying this crossover within a unified IR substrate would
+provide a more complete picture of the design trade-off.
+
+\paragraph{Hybrid scheduling within a unified IR.}
+The DASS framework~\cite{9378784} demonstrates that combining static
+and dynamic scheduling within a single circuit can recover much of
+the area advantage of static scheduling while retaining most of the
+performance advantage of dynamic scheduling, but it does so across
+two disjoint tool flows (Vivado HLS and Dynamatic). The shared
+MLIR/CIRCT substrate established in this work, together with the
+observation by Kim et al.~\cite{10.1145/3689790} that static and
+dynamic accelerator IRs share substantial structural commonality,
+suggests a natural next step: implementing a hybrid scheduler in
+which HIR-style statically scheduled regions are integrated as
+black-box components within a Dynamatic-style elastic dataflow
+graph at the IR level. Such an integration would eliminate the
+cross-tool boundary that DASS must currently traverse and would
+permit unified optimisation across the static/dynamic interface.
+
+\paragraph{Automated scheduling-paradigm selection.}
+A further research direction, also gestured at in the DASS
+work~\cite{9378784}, is the automatic identification of program
+regions amenable to static scheduling versus those that benefit from
+dynamic scheduling. The unified IR substrate makes this analysis
+tractable: structural properties of the MLIR affine and CFG
+representations---loop-carried dependence patterns, predicate-driven
+control flow, memory access regularity---can in principle be used to
+synthesise per-region scheduling decisions automatically, removing
+the requirement for user-supplied pragmas. Coupling such an analysis
+with the hybrid scheduler proposed above would close the loop on a
+fully automated, paradigm-aware HLS flow.
+
+\paragraph{Design-space exploration and Pareto analysis.}
+The single-point synthesis methodology of the present study could be
+extended to a systematic design-space exploration that sweeps
+pipelining factors, unrolling depths, memory port configurations,
+and clock targets for each benchmark. This would yield a Pareto
+frontier in the area--throughput plane for each scheduling paradigm
+and would allow more nuanced comparisons---for example, identifying
+configurations at which the two paradigms converge or cross over,
+rather than reporting a single ratio per metric.
+
+\paragraph{Vendor-neutral synthesis.}
+Re-running the comparison through both Quartus Prime and Vivado on
+representative Intel and Xilinx targets would isolate the influence
+of vendor-specific physical synthesis heuristics from the influence
+of the scheduling paradigm itself, and would address the
+toolchain-asymmetry caveat raised in Section~\ref{sec:limitations}.
+A complementary path is to extend HIR's backend to emit Vivado-
+compatible Verilog directly, which would permit both pipelines to
+be evaluated against Dynamatic's native target.
+
+\paragraph{Power and energy characterisation.}
+The present evaluation reports area, frequency, and cycle count but
+does not address dynamic power consumption, which is a first-order
+concern for many FPGA deployments and which may not track linearly
+with area. A natural extension is to incorporate vendor power
+estimation flows---such as Quartus PowerPlay or Vivado XPE---and to
+report energy-per-operation across the benchmark suite, with
+particular attention to the cost of Dynamatic's per-arc handshaking
+infrastructure under realistic activity profiles.
 
 \section{Conclusion}
-[Summarize the findings and the impact of the work.]
+\label{sec:conclusion}
+
+This work has presented a controlled, toolchain-neutral comparison
+between static and dynamic scheduling in high-level synthesis,
+grounded in a unified MLIR/CIRCT compilation substrate that hosts
+both the HIR static
+pipeline~\cite{10.1145/3623278.3624767} and the Dynamatic dynamic
+pipeline~\cite{10.1145/3373087.3375391}. Achieving this comparison
+required a four-way reconciliation of the projects' divergent
+dependency trees, the development of an HLS pragma handler for the
+Polygeist C-to-MLIR frontend, the construction of an
+\texttt{AffineToHIRPrep} bridge pass, and the production of a
+pragma-annotated Dynamatic benchmark suite consumable by both
+pipelines.
+
+Across seven kernels synthesised for the Arria~10AX115N4F45I3SG
+device under identical $500$~MHz constraints, the statically
+scheduled HIR pipeline produced consistently smaller and faster
+hardware than the dynamically scheduled Dynamatic pipeline. Mean
+ALUT and register usage were reduced by approximately $4.75\times$
+and exceeded $11\times$ on the worst-case benchmarks; GPIO pin
+counts fell uniformly by $3.5$--$5.4\times$; and execution latency
+fell by $1.4$--$2.95\times$ on six of the seven kernels. Maximum
+operating frequencies were broadly comparable across the two
+paradigms, with Dynamatic incurring at most a $26\%$ frequency
+penalty and matching or slightly exceeding HIR on four benchmarks.
+
+These findings empirically corroborate, within a unified IR
+substrate, the qualitative trends reported by Cheng et
+al.~\cite{9378784}: static scheduling yields markedly smaller
+hardware with tighter initiation intervals when the workload's
+control flow and memory access patterns are statically analysable,
+while dynamic scheduling pays a substantial area and latency
+overhead for runtime flexibility that regular kernels do not
+exercise. The contribution of the present study is to quantify this
+overhead under controlled conditions, and to demonstrate that the
+gap is large---often exceeding an order of magnitude in register
+count---when the workload regime favours static scheduling.
+
+The principal forward-looking implication is one of \emph{paradigm
+selection}. The data presented here strongly suggest that committing
+an entire design to dynamic scheduling is wasteful when the program
+contains substantial regular sub-regions, while committing entirely
+to static scheduling forfeits the genuine throughput gains available
+on irregular sub-regions~\cite{9378784}. The unified MLIR/CIRCT
+foundation laid by this work, together with recent IR-unification
+results~\cite{10.1145/3689790}, makes a hybrid scheduler operating
+within a single IR substrate an attainable engineering goal rather
+than a cross-tool integration challenge. Extending the present
+evaluation to control-dominated benchmarks, exploring Pareto-optimal
+points in the area--throughput plane, and prototyping such a hybrid
+scheduler constitute the natural next steps, and will determine
+whether the promise of paradigm-aware HLS---getting most of the area
+of static scheduling and most of the performance of dynamic
+scheduling on a single, automated flow---can be realised within a
+unified compiler stack.
 
 \bibliographystyle{ACM-Reference-Format}
 \bibliography{sources/refs}
