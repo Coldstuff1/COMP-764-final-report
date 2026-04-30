@@ -551,6 +551,116 @@ unchanged, preserving the integrity of the comparison.
 \end{itemize}
 
 \subsection{Results and Analysis}
+Figure~\ref{fig:all-results} presents the post-synthesis comparison
+between the HIR (static) and Dynamatic (dynamic) pipelines across all
+seven benchmark kernels.  Each sub-figure plots the ratio
+$\text{Dynamatic} / \text{HIR}$ for a single hardware metric; a ratio
+greater than one therefore indicates that Dynamatic consumes more of
+that resource (or more clock cycles) than HIR, while a ratio less than
+one indicates the converse.
+ 
+\paragraph{Area: ALUTs and Registers.}
+The area overhead introduced by dynamic scheduling is substantial and
+consistent across every benchmark
+(Figures~\ref{fig:aluts}~and~\ref{fig:registers}).  ALUT usage ratios
+range from approximately $2\times$ (\texttt{simple\_example}) to
+$6.5\times$ (\texttt{sumi3\_mem}), with a mean of $4.75\times$.
+Register ratios follow a similar trend but are even more pronounced:
+\texttt{FIR} and \texttt{sumi3\_mem} exceed $11\times$ and
+$12.5\times$ respectively, while the most favourable case
+(\texttt{simple\_example}) still requires roughly $2.2\times$ the
+registers of its statically scheduled counterpart.  These results are
+consistent with the well-understood area cost of elastic dataflow
+circuits~\cite{9378784}: every inter-component arc in Dynamatic carries
+\textit{valid}/\textit{ready} handshaking logic, and the absence of
+compile-time resource sharing forces the synthesis tool to replicate
+functional units that a static scheduler would bind to a single
+operator.  Benchmarks with deeper pipelines and more memory accesses
+(\texttt{FIR}, \texttt{sumi3\_mem}, \texttt{matrix}) exhibit the
+highest overheads because they instantiate more dataflow components and,
+consequently, more handshaking registers and routing multiplexers.
+ 
+\paragraph{I/O: GPIO Pin Usage.}
+Figure~\ref{fig:pins} reveals that Dynamatic designs require between
+$3.5\times$ and $5.4\times$ the GPIO pins of the corresponding HIR
+designs.  The ratio is remarkably uniform across benchmarks (standard
+deviation $< 0.6$), reflecting a structural property of the elastic
+circuit model: Dynamatic's top-level entity must expose
+\textit{valid}, \textit{ready}, and data ports for every function
+argument and memory interface, whereas HIR's FSM-based controller
+multiplexes memory accesses internally through a compact port map.
+The \texttt{matvec} benchmark records the highest ratio ($\approx
+5.4\times$), likely because its multiple array arguments each generate
+a dedicated dual-port memory interface in the Dynamatic netlist.
+ 
+\paragraph{Frequency: $F_{\max}$.}
+Unlike the area metrics, the $F_{\max}$ ratios shown in
+Figure~\ref{fig:fmax} cluster around unity, indicating that the two
+scheduling paradigms achieve broadly comparable clock frequencies on
+the target Arria~10 device.  Four benchmarks
+(\texttt{simple\_example}, \texttt{stencil\_2d}, \texttt{matrix},
+\texttt{vector\_rescale}) yield ratios at or above $1.0$, meaning
+Dynamatic matches or slightly exceeds HIR's achievable frequency.  The
+remaining three (\texttt{FIR} at $\approx 0.74$, \texttt{sumi3\_mem}
+at $\approx 0.79$, \texttt{matvec} at $\approx 0.87$) show a modest
+frequency degradation for the dynamically scheduled design.  These
+reductions can be attributed to the combinational depth added by the
+handshaking arbitration logic on the critical path, an effect that is
+amplified in kernels with long, tightly coupled feedback
+loops~\cite{10.1145/3373087.3375391}.  Nonetheless, the overall
+picture is more favourable to Dynamatic than the area metrics would
+suggest: the $F_{\max}$ penalty is at most $26\%$ and in several cases
+is negligible or even reversed, likely because Quartus Prime's
+register retiming and physical optimisation passes absorb much of the
+handshaking overhead.
+ 
+\paragraph{Latency: Number of Cycles.}
+Figure~\ref{fig:cycles} shows the cycle-count ratio for each
+benchmark.  In six of seven cases the ratio exceeds $1.0$, indicating
+that Dynamatic requires more clock cycles than HIR to complete the
+same computation.  \texttt{FIR} and \texttt{sumi3\_mem} are the worst
+cases at roughly $2.95\times$, while \texttt{matrix} ($1.5\times$),
+\texttt{matvec} ($1.4\times$), and \texttt{stencil\_2d}
+($1.85\times$) incur moderate penalties.  The sole exception is
+\texttt{vector\_rescale}, whose ratio of approximately $1.0$ indicates
+cycle parity between the two pipelines.  This benchmark contains no
+data-dependent branching and a single, regular loop nest---precisely
+the workload profile where dynamic scheduling adds overhead without
+extracting any compensating flexibility.  Conversely, the high
+cycle-count ratios observed in \texttt{FIR} and \texttt{sumi3\_mem}
+reflect the cost of runtime arbitration and token management in
+kernels whose memory access patterns are fully predictable at compile
+time, allowing the static scheduler to achieve tighter initiation
+intervals.
+ 
+\paragraph{Combined Interpretation.}
+Taken together, the five metrics paint a coherent picture.  On
+regular, affine-dominated kernels drawn from the Dynamatic test suite,
+the statically scheduled HIR pipeline dominates across area (ALUTs,
+registers, I/O pins) and execution latency, while the two approaches
+achieve comparable maximum frequencies.  The area savings afforded by
+static scheduling are dramatic---often exceeding $4\times$ in ALUTs
+and $5\times$ in registers---because HIR's compile-time resource
+sharing and FSM-based control eliminate the per-arc handshaking
+infrastructure inherent to elastic circuits.  The cycle-count advantage
+of HIR likewise stems from its ability to compute tight, fixed
+initiation intervals via SDC-based modulo scheduling, whereas
+Dynamatic's runtime token flow incurs coordination overhead that
+manifests as additional cycles on workloads without
+data-dependent control divergence.
+ 
+These results are consistent with the findings of Cheng et
+al.~\cite{9378784}, who demonstrate that static scheduling yields
+smaller and, on regular kernels, faster hardware, while dynamic
+scheduling excels only when irregular control flow or variable-latency
+memory accesses prevent the static scheduler from finding an efficient
+fixed schedule.  Because the Dynamatic benchmark suite used in this
+evaluation consists predominantly of regular kernels, the comparison
+is expected to favour HIR; the critical insight is the \emph{magnitude}
+of the gap, which underscores the practical cost of the dynamic
+paradigm's generality when that generality is not exploited by the
+workload.
+
 \begin{figure*}[htbp]
     \centering
     \begin{subfigure}[b]{0.48\linewidth}
